@@ -1,0 +1,8 @@
+device(ai,          INST_IO,    SPIdigAI,           "SPIdig")
+device(ao,          INST_IO,    SPIdigAO,           "SPIdig")
+device(bo,          INST_IO,    SPIdigBO,           "SPIdig")
+device(mbbiDirect,  INST_IO,    SPIdigMBBIDirect,   "SPIdig")
+device(mbboDirect,  INST_IO,    SPIdigMBBODirect,   "SPIdig")
+driver(drvSPI)
+variable(SPIDebug, int)
+registrar(drvSPIRegister)

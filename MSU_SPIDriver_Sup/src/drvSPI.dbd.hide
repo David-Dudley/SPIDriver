@@ -1,0 +1,10 @@
+//device(ai,  INST_IO,    SPIdigAI,    "digSPI")
+//device(ao,  INST_IO,    SPIdigAO,    "digSPI")
+
+//device(bi, INST_IO, SPIdigBI, "digSPI")
+//device(bo, INST_IO, SPIdigBO, "digSPI")
+//device(mbbiDirect, INST_IO, SPIdigMBBIDirect, "digSPI")
+//device(mbboDirect, INST_IO, SPIdigMBBODirect, "digSPI")
+
+driver(drvSPI)
+registrar(drvSPIRegister)

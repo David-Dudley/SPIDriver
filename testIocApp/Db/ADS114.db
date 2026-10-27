@@ -1,0 +1,13 @@
+
+
+#Basic AI record
+record(ai, "${P}${S}ADS114ReadDeviceID") {
+  field(DTYP, "SPIdig")
+  field(INP, "@mySPI -C 0 -i 2 READ8  0x20, 0, 0")
+}
+
+record(ai, "${P}${S}ADS114ReadDeviceStatus") {
+  field(DTYP, "SPIdig")
+  field(INP, "@mySPI -C 0 -i 2 READ8  0x21, 0, 0")
+}
+
