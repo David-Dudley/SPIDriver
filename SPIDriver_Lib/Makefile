@@ -1,28 +1,18 @@
-TOP=../
+# SPDX-FileCopyrightText: 1997 Argonne National Laboratory
+#
+# SPDX-License-Identifier: EPICS
 
+# Makefile at top of application tree
+TOP = ..
 include $(TOP)/configure/CONFIG
-#----------------------------------------
-#  ADD MACRO DEFINITIONS AFTER THIS LINE
-#=============================
 
-#=============================
-# Build the application library
+# Directories to be built, in any order.
+# You can replace these wildcards with an explicit list
+DIRS += $(wildcard src* *Src*)
+DIRS += $(wildcard db* *Db*)
 
-# PROD_IOC = SPIDriver
+# If the build order matters, add dependency rules like this,
+# which specifies that xxxSrc must be built after src:
+#xxxSrc_DEPEND_DIRS += src
 
-LIBRARY = SPIDriver
-
-# Add all the support libraries needed by this IOC
-
-# Install the include file
-INC += SPIDriver.h
-
-# Library sources
-SRCS += SPIDriver.c
-
-#===========================
-
-include $(TOP)/configure/RULES
-#----------------------------------------
-#  ADD RULES AFTER THIS LINE
-
+include $(TOP)/configure/RULES_DIRS
