@@ -1,4 +1,4 @@
-/* *****************************************************************************
+/** *****************************************************************************
  *
  * This is a general purpose driver developed to allow interfacing with
  * a SPI interface on a host card.
@@ -52,6 +52,8 @@
 #include <mbboDirectRecord.h>
 #include <iocsh.h>
 #include <epicsExport.h>
+#include <epicsTime.h>
+#include <ellLib.h>
 
 #include "gpio.h"
 #include "SPIDriver.h"
@@ -81,13 +83,12 @@ static struct deviceServer {
 // Private data that the access routines use
 struct privateData 
 {
+  ELLNODE   node;
   dbCommon  *pv;            // Pointer back to the record definition
-//  ELLNODE node;
   char *    device;         // Which device this is (name)
   struct    deviceServer *server; // Link to actual device data
   char *    driverName;     // Name of the driver I'm going to use
-  EPICSTHREADFUNC driver;   //What Driver to use
-  epicsThreadId driverThread; // Thread to do the function
+  uint8_t   act;            // This record is active
   CALLBACK  cb;             // Callback to execute when compete
   uint8_t   tpro;           // Show debug data on this transaction
   uint8_t   chipSelect;     // ChipSelect to use
@@ -106,23 +107,31 @@ struct privateData
     uint16_t  *words;
     uint8_t   *bytes;
   } rcv;
-  //epicsMutexId lock;
 };
 
+ELLLIST read8Chain;         // chain of 8-bit input devices
+ELLLIST read12Chain;        // chain of 12-bit input devices
+ELLLIST read816Chain;       // chain of 8.16-bit input devices
+ELLLIST read16Chain;        // chain of 16-bit input devices
+ELLLIST ads114Chain;        // chain of ADS114 input devices
+ELLLIST gpioChain;          // Chain for GPIO stuff
+ELLLIST write8Chain;        // chain of 8-bit output devices
+ELLLIST write16Chain;       // chain of 16-bit output devices
 
-/* *********************************************************************************
+/** *********************************************************************************
  * 
- * Add this channel into the driver
+ * \brief Add this channel into the driver
  * 
  * On entry:
- * name   - Name for the device
- * device - File link for access
- * mode   - What SPI mode to use
- * bits   - How many bits for each character to transmit
- * speed  - How fast
+ * @param name   - Name for the device
+ * @param device - File link for access
+ * @param mode   - What SPI mode to use
+ * @param bits   - How many bits for each character to transmit
+ * @param speed  - How fast
  * ********************************************************************************/
 static int addSPIDevice( const char *name, const char *device, const uint8_t mode, const uint8_t bits, const uint32_t speed)
 {
+#ifdef SPI_AVAIL
   struct deviceServer *newServer;
 
   int fd = 0;
@@ -148,9 +157,13 @@ static int addSPIDevice( const char *name, const char *device, const uint8_t mod
     newServer->plock = epicsMutexMustCreate();
 	newServer->handle = fd;
   }
+#endif
   return(0);
 }
 
+
+/// Find a specific device server
+///
 static struct deviceServer *findDevice(char *name)
 {
   struct deviceServer *server;
@@ -164,7 +177,10 @@ static struct deviceServer *findDevice(char *name)
   }
   return(NULL);
 }
-	
+
+
+/// Close the SPI devices
+///
 void closeSPIDevices()
 {
   struct deviceServer *server;
@@ -172,7 +188,6 @@ void closeSPIDevices()
   server = deviceServers;
   while(server)
   {
-//    epicsMutexDestroy(server->plock);
     closeSPI(server->handle);
     server = server->next;
   }
@@ -271,13 +286,24 @@ void loadMyDatabaseRecords(void)
 #endif
 	}
 }
-#ifdef NOT_NOW
+
 static void scannerThread(void *parm);
 void startScannerThread()
 {
   epicsThreadCreate("scannerThread", epicsThreadPriorityHigh, epicsThreadGetStackSize(epicsThreadStackBig), &scannerThread, 0);
 }
-#endif
+
+/** ****************************************************************************************************************************
+ *
+ * This routine runs during the initial state machine.
+ * it allows operations during specific states to be executed
+ * This is particularly useful during startup and shutdown when ou want
+ * to add a specific function during a specific state.
+ * For instance, during state initHookAtBeginning state, I load a set of local database records to provide statistics
+ * and during state  initHookAterIocRuning I start the scanner thread to scan all the PV blocks
+ *
+ * @param state - specific state that EPICS in in at the moment.
+ * *****************************************************************************************************************************/
 
 static void initStateRoutine(initHookState state)
 {
@@ -286,44 +312,58 @@ static void initStateRoutine(initHookState state)
 	{
 	case initHookAtIocBuild:			// Initial case.  called before the IOC has begun it's initialization processing.  Not much happening yet'
 		break;
-	case initHookAtBeginning:			// At this point, the log is showing that iocInit is starting, and sigHub has been set to be ignored
+
+    case initHookAtBeginning:			// At this point, the log is showing that iocInit is starting, and sigHub has been set to be ignored
 		loadMyDatabaseRecords();        // Load my specific database records that I might want to manage for this driver.  These are specifically allocated to this driver.
 		break;
-	case initHookAfterCallbackInit:		// Show the version message, initialize the task watchdog, and initialize the callback functions.
+
+    case initHookAfterCallbackInit:		// Show the version message, initialize the task watchdog, and initialize the callback functions.
 		break;
-	case initHookAfterCaLinkInit:		// Initialize the CaLink routines, but don't start anything yet
+
+    case initHookAfterCaLinkInit:		// Initialize the CaLink routines, but don't start anything yet
 		break;
-	case initHookAfterInitDrvSup:		// Driver initialization routines are called. Realize that up to this point, there still hasn't been any database work.
+
+    case initHookAfterInitDrvSup:		// Driver initialization routines are called. Realize that up to this point, there still hasn't been any database work.
 		break;
-	case initHookAfterInitRecSup:		// Initialize each Record Support routine.  This still hasn't linked to the database, as that comes later
+
+    case initHookAfterInitRecSup:		// Initialize each Record Support routine.  This still hasn't linked to the database, as that comes later
 		break;
-	case initHookAfterInitDevSup:		// Initialize the Device support routines, indicating this is the initial call. This is separate from the Record
+
+    case initHookAfterInitDevSup:		// Initialize the Device support routines, indicating this is the initial call. This is separate from the Record
 										// and Driver support routines, but still, realize that no Database work has started yet.
-      initGPIO("ioc");                       // Startup the GPIO lines
+//      initGPIO("ioc");                       // Startup the GPIO lines
 		break;
-	case initHookAfterInitDatabase:		// Start Database initialization now.  Three passes are made over the database.
+
+    case initHookAfterInitDatabase:		// Start Database initialization now.  Three passes are made over the database.
 										// 1. Initialize RSET, RDES, MLOK, MLIS, PACTA, and DSET for all records. Call each record support's init_record(first pass)
 										// 2. Convert each PV_LINK into a DB_LINK or a CA_LINK.  Call any extended device support's add-record routines.
 										// 3. Call each record support's init-record for a second pass.
 										// Next register an epicsAtExit routine to shutdown the database.  Then create the lock sets.  Finally initialize the db debugging support
 		break;
-	case initHookAfterFinishDevSup:		// Second pass at Device Support, indicating this is the final call.
+
+    case initHookAfterFinishDevSup:		// Second pass at Device Support, indicating this is the final call.
 		break;
-		/* Initial setup for all the SCAN threads (but they're not operational yet)
+
+        /* Initial setup for all the SCAN threads (but they're not operational yet)
 		 * Initialize access security as well
 		 * Initialize process notification
 		 */
 	case initHookAfterScanInit:
 		break;
-	case initHookAfterInitialProcess:	// Here's where we start some basic work.  Initially process all records that have PINI set
+
+    case initHookAfterInitialProcess:	// Here's where we start some basic work.  Initially process all records that have PINI set
 		break;
-	case initHookAfterCaServerInit:		// Initially start the server going, but don't allow tasks to announce on the network yet
+
+    case initHookAfterCaServerInit:		// Initially start the server going, but don't allow tasks to announce on the network yet
 		break;
-	case initHookAfterIocBuilt:			// The IOC is fully initialized, but is still quiet. iocBuild command completes here
+
+    case initHookAfterIocBuilt:			// The IOC is fully initialized, but is still quiet. iocBuild command completes here
 		break;
-	case initHookAtIocRun:				// Coming out of iocBuilt, and moving to active state.  Just announce getting started
+
+    case initHookAtIocRun:				// Coming out of iocBuilt, and moving to active state.  Just announce getting started
 		break;
-	case initHookAfterDatabaseRunning:	// Start up the database operation and scanning now.  Set InterruptAccept to TRUE
+
+    case initHookAfterDatabaseRunning:	// Start up the database operation and scanning now.  Set InterruptAccept to TRUE
 		break;
 /*
  * Execution of this routine is delayed until after the IOC has achieved a particular state.
@@ -333,34 +373,48 @@ static void initStateRoutine(initHookState state)
 	/* Show this after things are started, if this is the first time reaching this level */
 	case initHookAfterInterruptAccept:	// OK, I'm now at the right state to be able to start things up.
 		break;
-	case initHookAfterCaServerRunning:	// Start up allthe channel access server tasks
+
+    case initHookAfterCaServerRunning:	// Start up allthe channel access server tasks
 		break;
-	case initHookAtEnd:					// If the first time reacing this point, show the state I'm in
+
+    case initHookAtEnd:					// If the first time reacing this point, show the state I'm in
 		break;
-	case initHookAfterIocRunning:		// At this point, the iocInit process is complete, so log a completion message, and announce the startup function is complete.
-//        (void)startScannerThread();
+
+    case initHookAfterIocRunning:		// At this point, the iocInit process is complete, so log a completion message, and announce the startup function is complete.
+        (void)startScannerThread();
 		break;
-	case initHookAtIocPause:
+
+    case initHookAtIocPause:
 		break;
-	case initHookAfterCaServerPaused:
+
+    case initHookAfterCaServerPaused:
 		break;
-	case initHookAfterDatabasePaused:
+
+    case initHookAfterDatabasePaused:
 		break;
-	case initHookAfterIocPaused:
+
+    case initHookAfterIocPaused:
 		break;
-	case initHookAtShutdown:             // Start of iocShutdown commands
+
+    case initHookAtShutdown:             // Start of iocShutdown commands
 		break;
-	case initHookAfterCloseLinks:
+
+    case initHookAfterCloseLinks:
 		break;
-	case initHookAfterStopScan:          // triggered only by unittest code.   testIocShutdownOk()
+
+    case initHookAfterStopScan:          // triggered only by unittest code.   testIocShutdownOk()
 		break;
-	case initHookAfterStopCallback:      // triggered only by unittest code.   testIocShutdownOk()
+
+    case initHookAfterStopCallback:      // triggered only by unittest code.   testIocShutdownOk()
 		break;
-	case initHookAfterStopLinks:
+
+    case initHookAfterStopLinks:
 		break;
-	case initHookBeforeFree:             // triggered only by unittest code.   testIocShutdownOk()
+
+    case initHookBeforeFree:             // triggered only by unittest code.   testIocShutdownOk()
 		break;
-	case initHookAfterShutdown:          // End of iocShutdown commands
+
+    case initHookAfterShutdown:          // End of iocShutdown commands
 		closeSPIDevices();               // Shutdown SPI
         closeGPIO();                     // and GPIO as well
 		break;
@@ -389,7 +443,6 @@ static long initRoutine()
  *
  * ******************************************************************************************/
 
-/* Each of these drivers is a thread that operates when requested. */
 
 /* ============================================================================================
  *
@@ -415,6 +468,7 @@ static void GPIOWrite( void *ptr)
   } while(1);
 }
 
+#ifdef NEVER
 /* ============================================================================================
  *
  * This driver is specific to the ADS114 A/D converter chip analog input channels.
@@ -969,46 +1023,195 @@ static void Write16_Driver(void *ptr)
   }
   while(TRUE);
 }
-
-
+#endif
 
 // List of defined device Names
 typedef struct deviceDriverEntry
 {
 	char *driverName;
-	EPICSTHREADFUNC driver;
+    ELLLIST *thisPVType;
     uint8_t type;     // 0=words, 1 = bytes, 2 = special (reserve words)
 } deviceDriverEntry;
 
 static deviceDriverEntry deviceDrivers[] =
 {
-  {"GPIOWrite", GPIOWrite, 1},
-  {"ADS114READ", ADS114Read_Driver,1 },
-  {"READ8", Read8_Driver,1 },
-  {"READ8.16", Read8_16_Driver,2},
-  {"READ12", Read12_Driver,0 },
-  {"READ16", Read16_Driver,0 },
-  {"WRITE8", Write8_Driver,1},
-  {"WRITE16", Write16_Driver,0},
+  {"GPIOWrite", &gpioChain, 1},
+  {"ADS114READ", &ads114Chain, 1 },
+  {"READ8", &read8Chain, 1 },
+  {"READ8.16", &read816Chain, 2},
+  {"READ12", &read12Chain, 0 },
+  {"READ16", &read16Chain, 0 },
+  {"WRITE8", &write8Chain, 1},
+  {"WRITE16", &write16Chain, 0},
   {NULL, NULL}
 };
+
+
+/** **********************************************************************************
+ * \brief IO Scanner Thread
+ * This routine runs as a thread that is started upon completion of iocInit
+ * Its purpose is to run through the records in the IO Chain lists, and execute operations when required.
+ * This runs down the lists as fast as it can, so it executes all the reads and writes continuously
+ * as listed in the chain.
+ *
+ * Now, Writes are handled before reads as they may effect the reads
+ * */
+static void scannerThread(void *parm)
+{
+  ELLNODE *chain;
+  int i = 0;
+
+  do
+  {
+// #define DEBUG
+#ifdef DEBUG
+    // First, lets just show how many records I have on each list
+    if( (i=ellCount(&gpioChain)) )
+    {
+        printf("GPIO Chain has %d entries\n",i);
+        for(chain=ellFirst(&gpioChain); chain != 0; chain=ellNext(chain) )
+        {
+          struct privateData *ptr = (struct privateData *) chain;
+          printf("Record for %s\n", ptr->pv->name);
+        }
+    }
+    if((i=ellCount(&read8Chain)) )
+    {
+        printf("read8 Chain has %d entries\n",i);
+        for(chain=ellFirst(&read8Chain); chain != 0; chain=ellNext(chain) )
+        {
+          struct privateData *ptr = (struct privateData *) chain;
+          printf("Record for %s\n", ptr->pv->name);
+        }
+    }
+    if((i=ellCount(&read12Chain)) )
+    {
+        printf("read12 Chain has %d entries\n",i);
+        for(chain=ellFirst(&read12Chain); chain != 0; chain=ellNext(chain) )
+        {
+          struct privateData *ptr = (struct privateData *) chain;
+          printf("Record for %s\n", ptr->pv->name);
+        }
+    }
+    if((i=ellCount(&read816Chain)) )
+    {
+        printf("read8.16 Chain has %d entries\n",i);
+        for(chain=ellFirst(&read816Chain); chain != 0; chain=ellNext(chain) )
+        {
+          struct privateData *ptr = (struct privateData *) chain;
+          printf("Record for %s\n", ptr->pv->name);
+        }
+    }
+    if((i=ellCount(&read16Chain)) )
+    {
+        printf("read16 Chain has %d entries\n",i);
+        for(chain=ellFirst(&read16Chain); chain != 0; chain=ellNext(chain) )
+        {
+          struct privateData *ptr = (struct privateData *) chain;
+          printf("Record for %s\n", ptr->pv->name);
+        }
+    }
+    if((i=ellCount(&ads114Chain)) )
+    {
+        printf("ads114 Chain has %d entries\n",i);
+        for(chain=ellFirst(&ads114Chain); chain != 0; chain=ellNext(chain) )
+        {
+          struct privateData *ptr = (struct privateData *) chain;
+          printf("Record for %s\n", ptr->pv->name);
+        }
+    }
+    if((i=ellCount(&write8Chain)) )
+    {
+        printf("write8 Chain has %d entries\n",i);
+        for(chain=ellFirst(&write8Chain); chain != 0; chain=ellNext(chain) )
+        {
+          struct privateData *ptr = (struct privateData *) chain;
+          printf("Record for %s\n", ptr->pv->name);
+        }
+    }
+    if((i=ellCount(&write16Chain)) )
+    {
+        printf("write16 Chain has %d entries\n",i);
+        for(chain=ellFirst(&write16Chain); chain != 0; chain=ellNext(chain) )
+        {
+          struct privateData *ptr = (struct privateData *) chain;
+          printf("Record for %s\n", ptr->pv->name);
+        }
+    }
+    sleep(1);
+#else
+    // I think I'm going to actually put the routines here inline, as I don't think I should ever have to call them separately
+
+    // Lets start with the write8 routine
+    for(chain=ellFirst(&write8Chain); chain != 0; chain=ellNext(chain))
+    {
+      struct privateData  *ptr = (struct privateData *)chain;
+      if(ptr->act !=0)
+      {
+        // If I'm supposed to put data in the record, put it here
+        if(ptr->indexsupplied)
+          ptr->xmt.bytes[ptr->idx] = ptr->rval;
+
+        // Select the chip and do the transaction
+        chipSelect(ptr->chipSelect);
+        doSPITransaction8(ptr->server->handle, ptr->len, ptr->xmt.bytes, ptr->rcv.bytes );
+
+        // Get data to return
+        ptr->rval = ptr->rcv.bytes[ptr->idx];
+
+        chipSelect(15);
+
+        // Show I'm done
+        callbackRequest(&ptr->cb);
+      }
+      ptr->act=0;
+    }
+    //  Here is the write16 routine
+    for(chain=ellFirst(&write16Chain); chain != 0; chain=ellNext(chain))
+    {
+      struct privateData  *priv = (struct privateData *)chain;
+      if(priv->act != 0)
+      {
+        // If I'm supposed to put data in the record, put it here
+        if(priv->indexsupplied)
+          priv->xmt.words[priv->idx] = priv->rval;
+
+        // Select the chip and do the transaction
+        chipSelect(priv->chipSelect);
+        doSPITransaction16(priv->server->handle, priv->len*sizeof(uint16_t), priv->xmt.words, priv->rcv.words );
+
+
+        // If supposed to put data back, get it
+        if(priv->indexsupplied)
+          priv->rval = priv->rcv.words[priv->idx];
+
+        chipSelect(15);
+
+        // Show I'm done
+        callbackRequest(&priv->cb);
+      }
+      priv->act=0;
+    }
+#endif
+  } while(1);
+}
 
 
 
 // Actually starting to get down into the meat of this thing now.
 
-/*
- * OK, this is where some of the magic starts to happen.
+/* **********************************************************************************************************
+ * \brief OK, this is where some of the magic starts to happen.
  *
  * This is where you define device definitions, which are defined as:
  *
  * "@deviceName, -c chipselect -i index functionName hex-data,hex-data,..."
  * in this case, 
- * deviceName = Device to use
- * chipSelect = which chip select to generate for this access.
- * index      = where in the record any data will be stored/accessed
- * function   = What am I doing.  Right now, I think all I need is "read16" and "write16" to read and write unsigned 16-bit registers
- * "hex-data,..." The rest of the items on this list is the actual HEX data to be sent to the device
+ * @param deviceName = Device to use
+ * @param chipSelect = which chip select to generate for this access.
+ * @param index      = where in the record any data will be stored/accessed
+ * @param function   = What am I doing.  Right now, I think all I need is "read16" and "write16" to read and write unsigned 16-bit registers
+ * @param "hex-data,..." The rest of the items on this list is the actual HEX data to be sent to the device
  *
  * for instance,
  *  parseLink("device -c 0 -i 1 read16 0x0a0a0, 0x0")
@@ -1038,9 +1241,9 @@ static int parseLink(const char *linkLine, struct privateData *priv)
   // Initialize the private structure, to make sure there are no undefined items.
   priv->device=NULL;
   priv->server=NULL;
-  priv->driver=NULL;
   priv->chipSelect=15;
   priv->indexsupplied=0;
+  priv->act=0;
   priv->idx=0;
   priv->rval=0;
   priv->dataType=0;
@@ -1095,26 +1298,24 @@ static int parseLink(const char *linkLine, struct privateData *priv)
       // See if I can find the right entry in the table
       for(i=0; i<(sizeof(deviceDrivers)/sizeof(deviceDriverEntry)); i++)
       {
+        printf("Looking at %s\n",deviceDrivers[i].driverName);
+        // now, put this definition in the right list
         if( (strlen(priv->driverName) == strlen(deviceDrivers[i].driverName) ) && (!strcasecmp(priv->driverName, deviceDrivers[i].driverName) ) )
         {
           // found it
-          priv->driver=deviceDrivers[i].driver;
+          ellAdd(deviceDrivers[i].thisPVType, &priv->node);
           priv->dataType = deviceDrivers[i].type;
           break;
         }
         else
         {
-          if(deviceDrivers[i].driverName == NULL || deviceDrivers[i].driver == NULL)
+          if(deviceDrivers[i].driverName == NULL || deviceDrivers[i].thisPVType == NULL)
           {
             printf("Ran off end of valid table at index %d\n",i);
             break;
           }
         }
       }
-
-      if(!priv->driver)
-        printf("Couldn't find driver \"%s\"\n",priv->driverName);
-
       break;
     }
   }
@@ -1254,9 +1455,6 @@ long init_AI(aiRecord *prec)
       break;
   }
 
-  // Start the function up now
-  priv->driverThread = epicsThreadCreate(prec->name, epicsThreadPriorityHigh, epicsThreadGetStackSize(epicsThreadStackBig), priv->driver, priv);
-
   return 0;
 }
 
@@ -1275,13 +1473,14 @@ long read_AI(aiRecord *prec)
   {
     /* start async operation */
     priv->tpro=prec->tpro;
-    epicsThreadResume(priv->driverThread);
+    priv->act=1;
     prec->pact=TRUE;
     return 0;
   }
   else
   {
     /* complete operation */
+    priv->act=0;
     prec->pact=FALSE;
   }
   return 0;
@@ -1368,10 +1567,6 @@ static long init_AO(aoRecord *prec)
       return(S_db_badField);
       break;
   }
-
-  // Start the driver function up now
-  priv->driverThread = epicsThreadCreate(prec->name, epicsThreadPriorityHigh, epicsThreadGetStackSize(epicsThreadStackBig), priv->driver, priv);
-
   return 0;
 }
 
@@ -1393,14 +1588,15 @@ static long write_AO(aoRecord *prec)
     /* Start the async output operations */
     priv->tpro=prec->tpro;
 	priv->rval = prec->rval;
+    priv->act=1;
     prec->pact=TRUE;
-    epicsThreadResume(priv->driverThread);
     return 0;
   }
   else
   {
     /* Complete the operations */
     prec->pact=FALSE;
+    priv->act=0;
   }
   return(0);
 }
@@ -1480,8 +1676,6 @@ static long init_MBBIDirect(mbbiDirectRecord *prec)
       break;
   }
 
-  // Start the function up now
-  priv->driverThread = epicsThreadCreate(prec->name, epicsThreadPriorityHigh, epicsThreadGetStackSize(epicsThreadStackBig), priv->driver, priv);
   return 0;
 }
 
@@ -1500,14 +1694,15 @@ static long read_MBBIDirect(mbbiDirectRecord *prec)
   if( ! prec->pact )
   {
     /* start async operation */
+    priv->act=1;
     prec->pact=TRUE;
     callbackSetUser(prec,&priv->cb);
-    epicsThreadResume(priv->driverThread);
   }
   else
   {
     /* complete operation */
     prec->pact=FALSE;
+    priv->act=0;
   }
   return 0;
 }
@@ -1596,8 +1791,6 @@ static long init_MBBODirect(mbboDirectRecord *prec)
       break;
   }
 
-  // Start the function up now
-  priv->driverThread = epicsThreadCreate(prec->name, epicsThreadPriorityHigh, epicsThreadGetStackSize(epicsThreadStackBig), priv->driver, priv);
 
   return 0;
 }
@@ -1619,14 +1812,15 @@ static long write_MBBODirect(mbboDirectRecord *prec)
     /* Start the async output operations */
     priv->tpro=prec->tpro;
     priv->rval = prec->rval;
+    priv->act = 1;
     prec->pact=TRUE;
-    epicsThreadResume(priv->driverThread);
     return(0);
   }
   else
   {
     /* Complete the operations */
     prec->pact=FALSE;
+    priv->act=0;
   }
   return 0;
 }
@@ -1765,8 +1959,6 @@ static long init_BO(boRecord *prec)
   // If this is a constant, set it up
   recGblInitConstantLink(&prec->out,DBF_ULONG,&start);
 
-  // Start the function up now
-  priv->driverThread = epicsThreadCreate(prec->name, epicsThreadPriorityHigh, epicsThreadGetStackSize(epicsThreadStackBig), priv->driver, priv);
   return 0;
 }
 
@@ -1780,7 +1972,7 @@ static long write_BO(boRecord *prec)
   }
   priv->tpro=prec->tpro;
   priv->rval = prec->rval;
-  epicsThreadResume(priv->driverThread);
+  priv->act=1;
 
   return 0;
 }
