@@ -33,7 +33,6 @@ record(mbboDirect, "${P}${S}AMC7823PutPowerDown") {
   field(DTYP, "SPIdig")
   field(DESC, "Write to the Power-Down register")
   field(OUT, "@mySPI -C 0 -I 1  WRITE16  0x134d, 0")
-  field(FLNK, "${P}${S}AMC7823GetPowerDown")
 }
 
 #Write to the Status Reglster
@@ -41,7 +40,6 @@ record(mbboDirect, "${P}${S}AMC7823PutStat/Config") {
   field(DTYP, "SPIdig")
   field(DESC, "Write to the Status/Config register")
   field(OUT, "@mySPI -C 0 -I 1  WRITE16  0x128a, 0")
-  field(FLNK, "${P}${S}AMC7823GetStat/Config")
 }
 
 #Write to the Control Register
@@ -49,7 +47,6 @@ record(mbboDirect, "${P}${S}AMC7823PutCtrl") {
   field(DTYP, "SPIdig")
   field(OUT, "@mySPI -C 0 -I 1  WRITE16  0x12cb, 0")
   field(DESC, "Write to the Control Register")
-  field(FLNK, "${P}${S}AMC7823GetCtrl")
 }
 
 record(ai, "${P}${S}AMC7823GetPowerDown") {
@@ -71,7 +68,6 @@ record(mbboDirect, "${P}${S}AMC7823PutGPIO") {
   field(DESC, "Write the GPIO register")
   field(DTYP, "SPIdig")
   field(OUT, "@mySPI -C 0 -I 1 WRITE16 0x0280, 0")
-  field(FLNK, "${P}${S}AMC7823GetGPIO")
 }
 
 record(mbbiDirect, "${P}${S}AMC7823GetGPIO") {
@@ -84,7 +80,6 @@ record(mbboDirect, "${P}${S}AMC7823PutDACConfig") {
   field(DESC, "Write the GPIO register")
   field(DTYP, "SPIdig")
   field(OUT, "@mySPI -C 0 -I 1 WRITE16 0x1240, 0")
-  field(FLNK, "${P}${S}AMC7823GetDACConfig")
 }
 
 record(mbbiDirect, "${P}${S}AMC7823GetDACConfig") {
@@ -94,7 +89,7 @@ record(mbbiDirect, "${P}${S}AMC7823GetDACConfig") {
 }
 
 #! Further lines contain data used by VisualDCT
-#! View(0,372,1.0)
+#! View(0,0,1.0)
 #! Record("${P}${S}AMC7823Config",20,53,0,0,"${P}${S}AMC7823Config")
 #! Field("${P}${S}AMC7823Config.LNK0",16777215,1,"${P}${S}AMC7823Config.LNK0")
 #! Link("${P}${S}AMC7823Config.LNK0","${P}${S}AMC7823PutPowerDown.VAL")
@@ -106,28 +101,18 @@ record(mbbiDirect, "${P}${S}AMC7823GetDACConfig") {
 #! Link("${P}${S}AMC7823Config.LNK3","${P}${S}AMC7823PutGPIO.VAL")
 #! Field("${P}${S}AMC7823Config.LNK4",16777215,1,"${P}${S}AMC7823Config.LNK4")
 #! Link("${P}${S}AMC7823Config.LNK4","${P}${S}AMC7823PutDACConfig.VAL")
-#! Record("${P}${S}AMC7823PutPowerDown",300,47,0,0,"${P}${S}AMC7823PutPowerDown")
+#! Record("${P}${S}AMC7823PutPowerDown",300,61,0,0,"${P}${S}AMC7823PutPowerDown")
 #! Field("${P}${S}AMC7823PutPowerDown.VAL",16777215,0,"${P}${S}AMC7823PutPowerDown.VAL")
-#! Field("${P}${S}AMC7823PutPowerDown.FLNK",16777215,1,"${P}${S}AMC7823PutPowerDown.FLNK")
-#! Link("${P}${S}AMC7823PutPowerDown.FLNK","${P}${S}AMC7823GetPowerDown")
-#! Record("${P}${S}AMC7823PutStat/Config",320,247,0,0,"${P}${S}AMC7823PutStat/Config")
+#! Record("${P}${S}AMC7823PutStat/Config",320,261,0,0,"${P}${S}AMC7823PutStat/Config")
 #! Field("${P}${S}AMC7823PutStat/Config.VAL",16777215,0,"${P}${S}AMC7823PutStat/Config.VAL")
-#! Field("${P}${S}AMC7823PutStat/Config.FLNK",16777215,1,"${P}${S}AMC7823PutStat/Config.FLNK")
-#! Link("${P}${S}AMC7823PutStat/Config.FLNK","${P}${S}AMC7823GetStat/Config")
-#! Record("${P}${S}AMC7823PutCtrl",360,447,0,0,"${P}${S}AMC7823PutCtrl")
+#! Record("${P}${S}AMC7823PutCtrl",360,461,0,0,"${P}${S}AMC7823PutCtrl")
 #! Field("${P}${S}AMC7823PutCtrl.VAL",16777215,0,"${P}${S}AMC7823PutCtrl.VAL")
-#! Field("${P}${S}AMC7823PutCtrl.FLNK",16777215,1,"${P}${S}AMC7823PutCtrl.FLNK")
-#! Link("${P}${S}AMC7823PutCtrl.FLNK","${P}${S}AMC7823GetCtrl")
 #! Record("${P}${S}AMC7823GetPowerDown",620,135,0,0,"${P}${S}AMC7823GetPowerDown")
 #! Record("${P}${S}AMC7823GetStat/Config",620,335,0,0,"${P}${S}AMC7823GetStat/Config")
 #! Record("${P}${S}AMC7823GetCtrl",620,535,0,0,"${P}${S}AMC7823GetCtrl")
-#! Record("${P}${S}AMC7823PutGPIO",340,647,0,1,"${P}${S}AMC7823PutGPIO")
+#! Record("${P}${S}AMC7823PutGPIO",340,661,0,1,"${P}${S}AMC7823PutGPIO")
 #! Field("${P}${S}AMC7823PutGPIO.VAL",16777215,0,"${P}${S}AMC7823PutGPIO.VAL")
-#! Field("${P}${S}AMC7823PutGPIO.FLNK",16777215,1,"${P}${S}AMC7823PutGPIO.FLNK")
-#! Link("${P}${S}AMC7823PutGPIO.FLNK","${P}${S}AMC7823GetGPIO")
 #! Record("${P}${S}AMC7823GetGPIO",620,721,0,0,"${P}${S}AMC7823GetGPIO")
-#! Record("${P}${S}AMC7823PutDACConfig",320,847,0,0,"${P}${S}AMC7823PutDACConfig")
+#! Record("${P}${S}AMC7823PutDACConfig",320,861,0,0,"${P}${S}AMC7823PutDACConfig")
 #! Field("${P}${S}AMC7823PutDACConfig.VAL",16777215,0,"${P}${S}AMC7823PutDACConfig.VAL")
-#! Field("${P}${S}AMC7823PutDACConfig.FLNK",16777215,1,"${P}${S}AMC7823PutDACConfig.FLNK")
-#! Link("${P}${S}AMC7823PutDACConfig.FLNK","${P}${S}AMC7823GetDACConfig")
 #! Record("${P}${S}AMC7823GetDACConfig",640,901,0,0,"${P}${S}AMC7823GetDACConfig")

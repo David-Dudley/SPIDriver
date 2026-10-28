@@ -35,6 +35,8 @@ record(ai, "${P}${S}Amp_In_LVL") {
   field(INP, "${P}${S}AI2 PP")
   field(DESC, "Amplifier Input Level")
   field(SCAN, ".2 second")
+  field(LINR, "LINEAR")
+  field(ESLO, "0.0012207")
   field(HOPR, "5.00")
   field(LOPR, "0")
   field(EGU, "Vdc")
@@ -46,6 +48,8 @@ record(ai, "${P}${S}Amp_Out_LVL") {
   field(INP, "${P}${S}AI3 PP")
   field(DESC, "Amplifier Output Level")
   field(SCAN, ".2 second")
+  field(LINR, "LINEAR")
+  field(ESLO, "0.0012207")
   field(HOPR, "5.00")
   field(LOPR, "0")
   field(EGU, "Vdc")
@@ -57,6 +61,8 @@ record(ai, "${P}${S}VCC_Current") {
   field(INP, "${P}${S}AI4 PP")
   field(DESC, "VCC Current Sense")
   field(SCAN, ".2 second")
+  field(LINR, "LINEAR")
+  field(ESLO, "0.1728")
   field(HOPR, "1000")
   field(LOPR, "0")
   field(EGU, "mA")
@@ -69,6 +75,8 @@ record(ai, "${P}${S}HF_Atten_SP") {
   field(INP, "${P}${S}AI5 PP")
   field(DESC, "High Frequency Attenuator SP")
   field(SCAN, ".2 second")
+  field(LINR, "LINEAR")
+  field(ESLO, "0.0012207")
   field(HOPR, "5.00")
   field(LOPR, "0")
   field(EGU, "Vdc")
@@ -80,6 +88,8 @@ record(ai, "${P}${S}LF_Atten_SP") {
   field(INP, "${P}${S}AI6 PP")
   field(DESC, "Low Frequency Attenuator SP")
   field(SCAN, ".2 second")
+  field(LINR, "LINEAR")
+  field(ESLO, "0.0012207")
   field(HOPR, "5.00")
   field(LOPR, "0")
   field(EGU, "Vdc")
@@ -91,6 +101,8 @@ record(ai, "${P}${S}Amp_VCC") {
   field(INP, "${P}${S}AI7 PP")
   field(DESC, "Amplifer VCC Level")
   field(SCAN, ".2 second")
+  field(LINR, "LINEAR")
+ field(ESLO, "0.0012207")
   field(HOPR, "5.00")
   field(EGU, "Vdc")
   field(LOPR, "0")
@@ -102,6 +114,9 @@ record(ai, "${P}${S}A/D_Temp") {
   field(INP, "${P}${S}AI8 PP")
   field(DESC, "A/D Converter Temp")
   field(SCAN, "10 second")
+  field(LINR, "LINEAR")
+  field(ESLO, "3.172")
+  field(EOFF, "-273")
   field(HOPR, "100")
   field(EGU, "degC")
   field(LOPR, "0")
@@ -111,25 +126,25 @@ record(ai, "${P}${S}A/D_Temp") {
 #Analog Outputs
 record(ao, "${P}${S}RF_Atten_SP") {
   field(DTYP, "Soft Channel")
-  field(OUT, "${P}${S}AO0 PP")
+  field(OUT, "${P}${S}AO0")
   field(DESC, "RF Attenuator Setpoint")
 }
 
 record(ao, "${P}${S}VCO_Freq_SP") {
   field(DTYP, "Soft Channel")
-  field(OUT, "${P}${S}AO1 PP")
+  field(OUT, "${P}${S}AO1")
   field(DESC, "VCO Frequency Adjustment")
 }
 
 record(ao, "${P}${S}HF_Atten_SP_Force") {
   field(DTYP, "Soft Channel")
-  field(OUT, "${P}${S}AO2 PP")
+  field(OUT, "${P}${S}AO2")
   field(DESC, "HF Attenuator Setpoint FORCE")
 }
 
 record(ao, "${P}${S}LF_Atten_SP_Force") {
   field(DTYP, "Soft Channel")
-  field(OUT, "${P}${S}AO3 PP")
+  field(OUT, "${P}${S}AO3")
   field(DESC, "LF Attenuator Setpoint FORCE")
 }
 
@@ -155,14 +170,14 @@ record(ao, "${P}${S}LF_Atten_SP_Force") {
 #! Field("${P}${S}A/D_Temp.INP",16777215,1,"${P}${S}A/D_Temp.INP")
 #! Record("${P}${S}RF_Atten_SP",800,62,0,0,"${P}${S}RF_Atten_SP")
 #! Field("${P}${S}RF_Atten_SP.OUT",16777215,1,"${P}${S}RF_Atten_SP.OUT")
-#! Record("${P}${S}VCO_Freq_SP",800,222,0,0,"${P}${S}VCO_Freq_SP")
-#! Field("${P}${S}VCO_Freq_SP.OUT",16777215,1,"${P}${S}VCO_Freq_SP.OUT")
+#! Record("${P}${S}VCO_Freq_SP) {",800,222,0,0,"${P}${S}VCO_Freq_SP) {")
+#! Field("${P}${S}VCO_Freq_SP) {.OUT",16777215,1,"${P}${S}VCO_Freq_SP) {.OUT")
 #! Record("${P}${S}HF_Atten_SP_Force",800,382,0,0,"${P}${S}HF_Atten_SP_Force")
 #! Field("${P}${S}HF_Atten_SP_Force.OUT",16777215,1,"${P}${S}HF_Atten_SP_Force.OUT")
 #! Record("${P}${S}LF_Atten_SP_Force",800,542,0,0,"${P}${S}LF_Atten_SP_Force")
 #! Field("${P}${S}LF_Atten_SP_Force.OUT",16777215,1,"${P}${S}LF_Atten_SP_Force.OUT")
-#! Line(Line1,760,40,760,1100,0,0,0,16777215,null)
 #! Line(Line0,480,1100,480,40,0,0,0,16777215,null)
 #! TextBox(TB0,60,20,440,60,1,"Dialog",18,1,16777215,"Analog Inputs",null)
-#! TextBox(TB2,800,20,1020,60,0,"Dialog",18,1,16777215,"Analog Outputs",null)
+#! Line(Line1,760,40,760,1100,0,0,0,16777215,null)
 #! TextBox(TB1,500,20,740,60,0,"Dialog",14,1,16777215,"A/D Converter Temperature",null)
+#! TextBox(TB2,800,20,1020,60,0,"Dialog",18,1,16777215,"Analog Outputs",null)

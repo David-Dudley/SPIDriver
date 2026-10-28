@@ -80,7 +80,7 @@ static struct deviceServer {
 } *deviceServers = NULL;
 
 
-// Private data that the access routines use
+/// Private data that the access routines use
 struct privateData 
 {
   ELLNODE   node;
@@ -93,7 +93,8 @@ struct privateData
   uint8_t   tpro;           // Show debug data on this transaction
   uint8_t   chipSelect;     // ChipSelect to use
   uint8_t   indexsupplied;  // There was an index included in this command
-  uint16_t  idx;           // Where to access raw data in xmt/rcv
+  uint16_t  idx;            // Where to access raw data in xmt/rcv
+  uint16_t  lastVal;        // Last value updated in the record
   int16_t   rval;           // Raw Value
   uint8_t dataType;         // type of data (0=words, 1=bytes, 2=special (allocate words))
   uint8_t len;              // Length of data
@@ -109,14 +110,15 @@ struct privateData
   } rcv;
 };
 
-ELLLIST read8Chain;         // chain of 8-bit input devices
-ELLLIST read12Chain;        // chain of 12-bit input devices
-ELLLIST read816Chain;       // chain of 8.16-bit input devices
-ELLLIST read16Chain;        // chain of 16-bit input devices
-ELLLIST ads114Chain;        // chain of ADS114 input devices
-ELLLIST gpioChain;          // Chain for GPIO stuff
-ELLLIST write8Chain;        // chain of 8-bit output devices
-ELLLIST write16Chain;       // chain of 16-bit output devices
+/// Here are the ancfhors for the I/O chains
+ELLLIST gpioWriteChain;     /// Chain for GPIO stuff
+ELLLIST read8Chain;         /// chain of 8-bit input devices
+ELLLIST read12Chain;        /// chain of 12-bit input devices
+ELLLIST read816Chain;       /// chain of 8.16-bit input devices
+ELLLIST read16Chain;        /// chain of 16-bit input devices
+ELLLIST ads114Chain;        /// chain of ADS114 input devices
+ELLLIST write8Chain;        /// chain of 8-bit output devices
+ELLLIST write16Chain;       /// chain of 16-bit output devices
 
 /** *********************************************************************************
  * 
@@ -131,13 +133,15 @@ ELLLIST write16Chain;       // chain of 16-bit output devices
  * ********************************************************************************/
 static int addSPIDevice( const char *name, const char *device, const uint8_t mode, const uint8_t bits, const uint32_t speed)
 {
-#ifdef SPI_AVAIL
   struct deviceServer *newServer;
 
   int fd = 0;
 
 //  printf("Opening %s -> %s\n",name, device);
+#define SPI_AVAIL
+#ifdef SPI_AVAIL
   fd = openSPI(device, mode, bits, speed);
+#endif
   if (fd < 0)
   {
     perror("open SPI device");
@@ -157,7 +161,6 @@ static int addSPIDevice( const char *name, const char *device, const uint8_t mod
     newServer->plock = epicsMutexMustCreate();
 	newServer->handle = fd;
   }
-#endif
   return(0);
 }
 
@@ -331,7 +334,7 @@ static void initStateRoutine(initHookState state)
 
     case initHookAfterInitDevSup:		// Initialize the Device support routines, indicating this is the initial call. This is separate from the Record
 										// and Driver support routines, but still, realize that no Database work has started yet.
-//      initGPIO("ioc");                       // Startup the GPIO lines
+        initGPIO("ioc");                       // Startup the GPIO lines
 		break;
 
     case initHookAfterInitDatabase:		// Start Database initialization now.  Three passes are made over the database.
@@ -443,7 +446,7 @@ static long initRoutine()
  *
  * ******************************************************************************************/
 
-
+#ifdef NEVER
 /* ============================================================================================
  *
  * Here is the driver that outputs a value to the actual GPIO bit defined
@@ -468,7 +471,7 @@ static void GPIOWrite( void *ptr)
   } while(1);
 }
 
-#ifdef NEVER
+
 /* ============================================================================================
  *
  * This driver is specific to the ADS114 A/D converter chip analog input channels.
@@ -1035,7 +1038,7 @@ typedef struct deviceDriverEntry
 
 static deviceDriverEntry deviceDrivers[] =
 {
-  {"GPIOWrite", &gpioChain, 1},
+  {"GPIOWrite", &gpioWriteChain, 1},
   {"ADS114READ", &ads114Chain, 1 },
   {"READ8", &read8Chain, 1 },
   {"READ8.16", &read816Chain, 2},
@@ -1059,17 +1062,20 @@ static deviceDriverEntry deviceDrivers[] =
 static void scannerThread(void *parm)
 {
   ELLNODE *chain;
-  int i = 0;
 
   do
   {
-// #define DEBUG
+//#define DEBUG
 #ifdef DEBUG
+    int i = 0;
     // First, lets just show how many records I have on each list
-    if( (i=ellCount(&gpioChain)) )
+
+
+
+    if( (i=ellCount(&gpioWriteChain)) )
     {
-        printf("GPIO Chain has %d entries\n",i);
-        for(chain=ellFirst(&gpioChain); chain != 0; chain=ellNext(chain) )
+        printf("GPIOWrite Chain has %d entries\n",i);
+        for(chain=ellFirst(&gpioWriteChain); chain != 0; chain=ellNext(chain) )
         {
           struct privateData *ptr = (struct privateData *) chain;
           printf("Record for %s\n", ptr->pv->name);
@@ -1141,32 +1147,62 @@ static void scannerThread(void *parm)
     sleep(1);
 #else
     // I think I'm going to actually put the routines here inline, as I don't think I should ever have to call them separately
+    /* ============================================================================================
+    *
+    * Here is the driver that outputs a value to the actual GPIO bit defined
+    *
+    * ============================================================================================ */
 
-    // Lets start with the write8 routine
+    for(chain=ellFirst(&gpioWriteChain); chain!=NULL; chain=ellNext(chain))
+    {
+      struct privateData *priv = (struct privateData *)chain;
+
+      if(priv->act != 0)
+      {
+        if( GPIOOutput(priv->idx, priv->rval) < 0)
+        {
+          perror(" Inside __FILE__ Doing GPIOWrite Failed");
+        }
+        priv->act = 0;
+      }
+    }
+
+    /* ============================================================================================
+    *
+    * Here is the driver that works for the Write8 chain
+    *
+    * ============================================================================================ */
+
     for(chain=ellFirst(&write8Chain); chain != 0; chain=ellNext(chain))
     {
-      struct privateData  *ptr = (struct privateData *)chain;
-      if(ptr->act !=0)
+      struct privateData  *priv = (struct privateData *)chain;
+      if(priv->act !=0)
       {
+//        printf("Working on active write8 record, \"%s\" value=%d\n",priv->pv->name, priv->rval);
         // If I'm supposed to put data in the record, put it here
-        if(ptr->indexsupplied)
-          ptr->xmt.bytes[ptr->idx] = ptr->rval;
+        if(priv->indexsupplied)
+          priv->xmt.bytes[priv->idx] = priv->rval;
 
         // Select the chip and do the transaction
-        chipSelect(ptr->chipSelect);
-        doSPITransaction8(ptr->server->handle, ptr->len, ptr->xmt.bytes, ptr->rcv.bytes );
+        chipSelect(priv->chipSelect);
+        doSPITransaction8(priv->server->handle, priv->len, priv->xmt.bytes, priv->rcv.bytes );
 
         // Get data to return
-        ptr->rval = ptr->rcv.bytes[ptr->idx];
+        priv->rval = priv->rcv.bytes[priv->idx];
 
         chipSelect(15);
 
         // Show I'm done
-        callbackRequest(&ptr->cb);
+        callbackRequest(&priv->cb);
+        priv->act=0;
       }
-      ptr->act=0;
     }
-    //  Here is the write16 routine
+
+    /* ============================================================================================
+    *
+    * Here is the driver that works for the Write16 chain
+    *
+    * ============================================================================================ */
     for(chain=ellFirst(&write16Chain); chain != 0; chain=ellNext(chain))
     {
       struct privateData  *priv = (struct privateData *)chain;
@@ -1189,8 +1225,8 @@ static void scannerThread(void *parm)
 
         // Show I'm done
         callbackRequest(&priv->cb);
+        preiv->act=0;
       }
-      priv->act=0;
     }
 #endif
   } while(1);
@@ -1820,7 +1856,6 @@ static long write_MBBODirect(mbboDirectRecord *prec)
   {
     /* Complete the operations */
     prec->pact=FALSE;
-    priv->act=0;
   }
   return 0;
 }

@@ -1,4 +1,4 @@
-#!../../bin/linux-x86_64/testIoc
+#!/opt/EPICS/7/iocs//bin/linux-arm/testIoc
 
 #- SPDX-FileCopyrightText: 2000 Argonne National Laboratory
 #-
@@ -12,16 +12,18 @@
 cd "${TOP}"
 
 ## Register all support components
-dbLoadDatabase "dbd/testIoc.dbd"
+dbLoadDatabase "${TOP}/dbd/testIoc.dbd"
 testIoc_registerRecordDeviceDriver pdbbase
 
 #define my SPI port
-#               Device          Mode    Bits    Speed
-addSPIDevice("mySPI", "/dev/spidev0.0",  1,      8,      300000)
+#             MyName    Device                  Mode    Bits    Speed
+addSPIDevice("mySPI",   "/dev/spidev0.0",       1,      8,      300000)
+addSPIDevice("StatusLEDS", "/dev/spidev1.1",    1,      8,      300000)
 
 
 ## Load record instances
-dbLoadRecords "${TOP}/db/AMC7823Support.vdb", "P=dudleyd_, S=test:, user=dudleyd"
+dbLoadRecords "${TOP}/db/Diagnostics.db", "P=dudleyd_, S=test:, user=dudleyd, PORT=StatusLEDS"
+#dbLoadRecords "${TOP}/db/AMC7823Support.vdb", "P=dudleyd_, S=test:, user=dudleyd"
 #dbLoadRecords "${TOP}/db/AMC7823Analogs.vdb", "P=dudleyd_, S=test:, user=dudleyd"
 #dbLoadRecords "${TOP}/db/gatedAmplifierTester.vdb", "P=dudleyd_, S=test:, user=dudleyd"
 
