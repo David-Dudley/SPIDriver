@@ -1,0 +1,6 @@
+
+file "$(TOP)/db/K33600.vdb" {
+  pattern
+  { HWUNIT,   SYS,  SUB,  DEV,  INST    }
+ { "K33621A",  "TST",  "", "AWG", "N0001" }
+}

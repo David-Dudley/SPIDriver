@@ -1,0 +1,6 @@
+# Write to the Diagnostic LEDS register
+record(mbboDirect, "${P}${S}leds") {
+  field(DTYP, "SPIdig")
+  field(DESC, "Write to the Power-Down register")
+  field(OUT, "@${PORT} -C 0 -I 0  WRITE8  , 0")
+}

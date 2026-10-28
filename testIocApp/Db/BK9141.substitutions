@@ -1,0 +1,6 @@
+
+file "$(TOP)/db/BK9141.db" {
+  pattern
+  { HWUNIT,   SYS,  SUB,  DEV,  INST    }
+ { "BK9141",  "TST",  "", "PS", "N0001" }
+}

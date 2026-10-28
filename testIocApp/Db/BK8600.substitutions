@@ -1,0 +1,8 @@
+
+file "$(TOP)/db/BK8600.db" {
+  pattern
+  { HWUNIT,		SYS,	SUB,	DEV,	INST    }
+ { "BK8600A",	"TST",	 "",  	"LD", "N0001" }
+ { "BK8600B",	"TST",	 "",  	"LD", "N0002" }
+ { "BK8600C",	"TST",	 "",  	"LD", "N0003" }
+}

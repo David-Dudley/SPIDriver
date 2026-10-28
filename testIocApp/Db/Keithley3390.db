@@ -1,0 +1,147 @@
+##
+##  Keithley 3390 Arbitrary Waveform Generator
+##
+##  necessary macros:
+##    SYS    : device name SYSTEM component
+##    SUB    : device name SUBSYSTEM component
+##    DEV    : device name DEVICE component
+##    INST   : device name INSTANCE component
+##    HWUNIT : name of asyn port in drvAsynIPPortConfigure()
+##
+
+#------------------------------------------------------------------------------
+record(asyn, "_$(SYS)$(SUB):$(DEV)_$(INST):K3390_asyn")
+{
+  field(PORT, "$(HWUNIT)")
+}
+
+#-----------------------------------------------------------------------
+# reset command
+#-----------------------------------------------------------------------
+
+record(bo, "$(SYS)$(SUB):$(DEV)_$(INST):RST_CMD")
+{
+  field(DESC, "Reset command")
+  field(DTYP, "Soft Channel")
+  field(SCAN, "Passive")
+  field(ONAM, "1")
+  field(ZNAM, "0")
+  field(HIGH, "0.5")
+  field(FLNK, "_$(SYS)$(SUB):$(DEV)_$(INST):RESET_COUT PP")
+}
+
+record(calcout, "_$(SYS)$(SUB):$(DEV)_$(INST):RESET_COUT")
+{
+  field(DESC, "Reset intermediate calcout")
+  field(DTYP, "Soft Channel")
+  field(SCAN, "Passive")
+  field(PREC, "0")
+  field(CALC, "A")
+  field(INPA, "$(SYS)$(SUB):$(DEV)_$(INST):RST_CMD  NPP MS")
+  field(OUT,  "_dev_$(SYS)$(SUB):$(DEV)_$(INST):RST_CMD  PP MS")
+  field(OOPT, "When Non-zero")
+}
+
+record(bo, "_dev_$(SYS)$(SUB):$(DEV)_$(INST):RST_CMD")
+{
+  field(DESC, "Reset command")
+  field(DTYP, "stream")
+  field(SCAN, "Passive")
+  field(ONAM, "1")
+  field(ZNAM, "0")
+  field(OUT,  "@Keithley3390.proto resetCommand $(HWUNIT)")
+}  
+
+#-----------------------------------------------------------------------
+# status byte
+#-----------------------------------------------------------------------
+record(longin, "_$(SYS)$(SUB):$(DEV)_$(INST):STB")
+{
+  field(DESC, "Status byte")
+  field(DTYP, "stream")
+  field(SCAN, "2 second")
+  field(INP,  "@Keithley3390.proto getStatusByte $(HWUNIT)")
+  field(ADEL, "1")
+}
+
+#-----------------------------------------------------------------------
+# mode
+#-----------------------------------------------------------------------
+record(longout, "$(SYS)$(SUB):$(DEV)_$(INST):MODE_CSET")
+{
+  field(DESC, "Mode set")
+  field(DTYP, "stream")
+  field(SCAN, "Passive")
+  field(OUT,  "@Keithley3390.proto setMode $(HWUNIT)")
+  field(DRVH, "6")
+  field(DRVL, "0")
+  field(ADEL, "1")
+}
+
+record(longin, "$(SYS)$(SUB):$(DEV)_$(INST):MODE_RSET")
+{
+  info(archive, "default")
+  field(DESC, "Mode readback")
+  field(DTYP, "stream")
+  field(SCAN, "2 second")
+  field(INP,  "@Keithley3390.proto getMode $(HWUNIT)")
+  field(ADEL, "1")
+}
+
+
+#-----------------------------------------------------------------------
+# direct command / query+reply
+#-----------------------------------------------------------------------
+record(stringout, "_$(SYS)$(SUB):$(DEV)_$(INST):SCPI_CMD")
+{
+  field(DESC, "SCPI command")
+  field(DTYP, "stream")
+  field(SCAN, "Passive")
+  field(OUT, "@Keithley3390.proto sendRawCommand $(HWUNIT)")
+}
+
+record(stringout, "_$(SYS)$(SUB):$(DEV)_$(INST):SCPI_QUERY")
+{
+  field(DESC, "SCPI query")
+  field(DTYP, "stream")
+  field(SCAN, "Passive")
+  field(OUT, "@Keithley3390.proto sendRawQuery(_$(SYS)$(SUB):$(DEV)_$(INST):SCPI_REPLY.VAL) $(HWUNIT)")
+}
+
+record(stringin, "_$(SYS)$(SUB):$(DEV)_$(INST):SCPI_REPLY")
+{
+  field(DESC, "SCPI query reply")
+  field(DTYP, "Soft Channel")
+  field(SCAN, "Passive")
+}
+
+#-----------------------------------------------------------------------
+# enable/disable
+#-----------------------------------------------------------------------
+
+record(bo, "$(SYS)$(SUB):$(DEV)_$(INST):ENAB_CMD")
+{
+  info(archive, "default")
+  info(bbm, "VAL")
+  field(VAL,  "1")
+  field(PINI, "YES")
+  field(DESC, "Enable")
+  field(DTYP, "Soft Channel")
+  field(SCAN, "Passive")
+  field(ONAM, "1")
+  field(ZNAM, "0")
+}
+
+record(calc, "_$(HWUNIT):disable")
+{
+  field(DESC, "disable for asym/stream/etc")
+  field(SCAN, "Passive")
+  field(PREC, "0")
+  field(CALC, "(A>0.5)?0:1")
+  field(INPA, "$(SYS)$(SUB):$(DEV)_$(INST):ENAB_RSTS  CPP MS")
+  field(ADEL, "0.5")
+}
+
+
+#-----------------------------------------------------------------------
+

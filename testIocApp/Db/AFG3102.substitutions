@@ -1,0 +1,14 @@
+
+file "$(TOP)/db/RFDvc-TektronixAFG3102.db" {
+  pattern
+  { HWUNIT,          CHAN, SYS,   SUB,   DEV,    INST,    MAX_FR     }
+  { "_rfq_AFG_VX11", "1",  "REA", "RFQ", "FGEN", "N0001", "10"       }
+  { "_rfq_AFG_VX11", "2",  "REA", "RFQ", "FGEN", "N0002", "150.0e+6" }
+}
+
+file "$(TOP)/db/TekAFG3000.db" {
+  pattern
+  { PORT,                ADDR, TIMEOUT, P,          D             }
+  { "_rfq_TEKAFG3000_1", 0,    1,       "REA_RFQ:", "FGEN_N0001:" }
+  { "_rfq_TEKAFG3000_1", 1,    1,       "REA_RFQ:", "FGEN_N0002:" }
+}
