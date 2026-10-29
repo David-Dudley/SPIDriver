@@ -7,44 +7,41 @@
 #record(mbbiDirect, "${P}${S}InputLatch") {
 #  field(DTYP, "SPIdig")
 #  field(DESC, "Input Latch on Mitigation Card Tester")
-#  field(INP, "@${DEV}")
+#  field(INP, "@${PORT}")
 #}
 record(bo, "${P}${S}GPIOSel0") {
   field(DTYP, "SPIdig")
-  field(OUT, "@mySPI -i 0 GPIOWrite")
+  field(OUT, "@${PORT} -i 0 GPIOWrite")
 }
 
 record(bo, "${P}${S}GPIOSel1") {
   field(DTYP, "SPIdig")
-  field(OUT, "@mySPI -i 1 GPIOWrite")
+  field(OUT, "@${PORT} -i 1 GPIOWrite")
 }
 
 record(bo, "${P}${S}GPIOSel2") {
   field(DTYP, "SPIdig")
-  field(OUT, "@mySPI -i 2 GPIOWrite")
+  field(OUT, "@${PORT} -i 2 GPIOWrite")
 }
 
 record(bo, "${P}${S}GPIOSel3") {
   field(DTYP, "SPIdig")
-  field(OUT, "@mySPI -i 3 GPIOWrite")
+  field(OUT, "@${PORT} -i 3 GPIOWrite")
 }
 
 record(bo, "${P}${S}24VON") {
   field(DTYP, "SPIdig")
-  field(OUT, "@mySPI -i 4 GPIOWrite")
-  field(TPRO, "1")
+  field(OUT, "@${PORT} -i 4 GPIOWrite")
 }
 
 record(bo, "${P}${S}5VON") {
   field(DTYP, "SPIdig")
-  field(OUT, "@mySPI -i 5 GPIOWrite")
-  field(TPRO, "1")
+  field(OUT, "@${PORT} -i 5 GPIOWrite")
 }
 
 record(bo, "${P}${S}3VON") {
   field(DTYP, "SPIdig")
-  field(OUT, "@mySPI -i 6 GPIOWrite")
-  field(TPRO, "1")
+  field(OUT, "@${PORT} -i 6 GPIOWrite")
 }
 
 record(bo, "${P}${S}5VPowerON") {

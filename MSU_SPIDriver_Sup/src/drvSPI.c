@@ -1,3 +1,4 @@
+
 /** *****************************************************************************
  *
  * This is a general purpose driver developed to allow interfacing with
@@ -72,7 +73,6 @@ epicsExportAddress(int, SPIDebug);
 static struct deviceServer {
   struct deviceServer *next;
   char *name;
-  epicsMutexId plock;
   int handle;
   uint8_t mode;
   uint8_t bits;
@@ -90,6 +90,7 @@ struct privateData
   char *    driverName;     // Name of the driver I'm going to use
   uint8_t   act;            // This record is active
   CALLBACK  cb;             // Callback to execute when compete
+  IOSCANPVT scan;           // update routine for this record
   uint8_t   tpro;           // Show debug data on this transaction
   uint8_t   chipSelect;     // ChipSelect to use
   uint8_t   indexsupplied;  // There was an index included in this command
@@ -158,7 +159,6 @@ static int addSPIDevice( const char *name, const char *device, const uint8_t mod
 	newServer->next = deviceServers;
     deviceServers = newServer;
     newServer->name = strdup(name);
-    newServer->plock = epicsMutexMustCreate();
 	newServer->handle = fd;
   }
   return(0);
@@ -909,123 +909,8 @@ static void Read16_Driver(void *ptr)
   while(TRUE);
 }
 
-/* ============================================================================================
- *
- * Next routine.  This driver modifies a byte in the output string using the value you requested, and
- * the index of where to place it.  It then outputs the string as 8 bit bytes and returns.
- *
- * ============================================================================================ */
 
-static void Write8_Driver(void *ptr)
-{
-  struct privateData *priv = ptr;
-  do
-  {
-    // Wait till I'm needed
-    epicsThreadSuspendSelf();
 
-    // Get the resource
-    epicsMutexMustLock(priv->server->plock);
-
-    if(priv->tpro == 1)
-      printf("\nWrite 8\n");
-    // If I'm supposed to put data in the record, put it here
-    if(priv->indexsupplied)
-      priv->xmt.bytes[priv->idx] = priv->rval;
-
-    // Log the message going out if in verbose mode
-    if(priv->tpro == 1)
-    {
-      printf("\nWriting(8) 0x%01x> ",priv->chipSelect);
-      for(uint32_t i=0; i<priv->len; i++)
-        printf("%02x ", priv->xmt.bytes[i]);
-      printf("\n");
-    }
-
-    // Select the chip and do the transaction
-    chipSelect(priv->chipSelect);
-    doSPITransaction8(priv->server->handle, priv->len, priv->xmt.bytes, priv->rcv.bytes );
-
-    // Log the message I got back if in verbose mode
-    if(priv->tpro == 1)
-    {
-      printf("Got back(8) 0x%1x < ",priv->chipSelect);
-      for(uint8_t i=0; i<priv->len ; i++)
-        printf("%02x ", priv->rcv.bytes[i]);
-      printf(" >\n");
-    }
-
-    // Get data to return
-    if(priv->tpro == 1)
-      printf("Returning value of %x\n",priv->rcv.bytes[priv->idx]);
-    priv->rval = priv->rcv.bytes[priv->idx];
-
-    chipSelect(15);
-    // Release the resource
-    epicsMutexUnlock(priv->server->plock);
-
-    // Show I'm done
-    callbackRequest(&priv->cb);
-  }
-  while(TRUE);
-}
-
-/* ============================================================================================
- *
- * Next routine.  This driver modifies a 16 bit word in the output string using the value you requested, and
- * the index of where to place it.  It then outputs the string as 16 bit words and returns.
- *
- * ============================================================================================ */
-
-static void Write16_Driver(void *ptr)
-{
-  struct privateData *priv = ptr;
-  do
-  {
-    // Wait till requested
-    epicsThreadSuspendSelf();
-    // Get the resource
-    epicsMutexMustLock(priv->server->plock);
-
-    // If I'm supposed to put data in the record, put it here
-    if(priv->indexsupplied)
-      priv->xmt.words[priv->idx] = priv->rval;
-
-    // Log the message going out if in verbose mode
-    if(priv->tpro == 1)
-    {
-      printf("Writing(16) > ");
-      for(uint32_t i=0; i<priv->len; i++)
-        printf("%04x ", priv->xmt.words[i]);
-      printf("\n");
-    }
-
-    // Select the chip and do the transaction
-    chipSelect(priv->chipSelect);
-    doSPITransaction16(priv->server->handle, priv->len*sizeof(uint16_t), priv->xmt.words, priv->rcv.words );
-
-    // Log the message going out if in verbose mode
-    if(priv->tpro == 1)
-    {
-      printf("Got back(16) < ");
-      for(uint8_t i=0; i<priv->len ; i++)
-        printf("%04x ", priv->rcv.words[i]);
-      printf("\n");
-    }
-
-    // If supposed to put data back, get it
-    if(priv->indexsupplied)
-      priv->rval = priv->rcv.words[priv->idx];
-
-    chipSelect(15);
-    // Release the resource
-    epicsMutexUnlock(priv->server->plock);
-
-    // Show I'm done
-    callbackRequest(&priv->cb);
-  }
-  while(TRUE);
-}
 #endif
 
 // List of defined device Names
@@ -1146,10 +1031,12 @@ static void scannerThread(void *parm)
     }
     sleep(1);
 #else
-    // I think I'm going to actually put the routines here inline, as I don't think I should ever have to call them separately
-    /* ============================================================================================
+    // OK, I'm going to put all the routines inline here, and each chain will be executed completely (except for ADS114)
+    // before moving to the next.  All outputs are up first, as they might affect the read operations later.
+
+    /** ============================================================================================
     *
-    * Here is the driver that outputs a value to the actual GPIO bit defined
+    * Handle GPIO output requests.
     *
     * ============================================================================================ */
 
@@ -1159,6 +1046,9 @@ static void scannerThread(void *parm)
 
       if(priv->act != 0)
       {
+        if(priv->tpro)
+          printf("Working on active GPIO record, \"%s\" value=%01x\n",priv->pv->name, priv->rval);
+
         if( GPIOOutput(priv->idx, priv->rval) < 0)
         {
           perror(" Inside __FILE__ Doing GPIOWrite Failed");
@@ -1178,7 +1068,9 @@ static void scannerThread(void *parm)
       struct privateData  *priv = (struct privateData *)chain;
       if(priv->act !=0)
       {
-//        printf("Working on active write8 record, \"%s\" value=%d\n",priv->pv->name, priv->rval);
+        if(priv->tpro)
+          printf("Working on active write8 record, \"%s\" value=%02x\n",priv->pv->name, priv->rval);
+
         // If I'm supposed to put data in the record, put it here
         if(priv->indexsupplied)
           priv->xmt.bytes[priv->idx] = priv->rval;
@@ -1208,6 +1100,9 @@ static void scannerThread(void *parm)
       struct privateData  *priv = (struct privateData *)chain;
       if(priv->act != 0)
       {
+        if(priv->tpro)
+          printf("Working on active write16 record, \"%s\" value=%04x\n",priv->pv->name, priv->rval);
+
         // If I'm supposed to put data in the record, put it here
         if(priv->indexsupplied)
           priv->xmt.words[priv->idx] = priv->rval;
@@ -1225,9 +1120,122 @@ static void scannerThread(void *parm)
 
         // Show I'm done
         callbackRequest(&priv->cb);
-        preiv->act=0;
+        priv->act=0;
       }
     }
+
+    // All doue with the output routines, next lets do the routine to read8
+    /* ============================================================================================
+    *
+    * Here is the driver that outputs a string of bytes (and recieves a response simultaneously),
+    * and then returns a selected byte from the response.
+    *
+    * ============================================================================================ */
+
+    for(chain=ellFirst(&read8Chain); chain != 0; chain=ellNext(chain))
+    {
+      struct privateData  *priv = (struct privateData *)chain;
+      int status;
+
+      if(priv->act!=0)
+      {
+        // Log the message going out if in verbose mode
+        if(priv->pv->tpro != 0)
+        {
+          printf("\nRead8_Driver\nWriting(8) 0x%1x < ",priv->chipSelect);
+          for(uint32_t i=0; i<priv->len; i++)
+            printf("%02x ", priv->xmt.bytes[i]);
+          printf(" >\n");
+        }
+
+        // Select the chip and do the transaction
+        chipSelect(priv->chipSelect);
+
+        status = doSPITransaction8(priv->server->handle, priv->len*sizeof(uint8_t), priv->xmt.bytes, priv->rcv.bytes );
+        if(status < 0)
+        {
+          printf(" doSPITransaction8 to %s[%d] failed (6)\n",priv->pv->name, priv->server->handle);
+          exit(1);
+        }
+
+        // Log the message I got back if in verbose mode
+        if(priv->pv->tpro != 0)
+        {
+          printf("Reading(8) 0x%1x < ",priv->chipSelect);
+          for(uint8_t i=0; i<priv->len ; i++)
+            printf("%02x ", priv->rcv.bytes[i]);
+          printf(" >\n");
+        }
+
+        // Get data to return
+        if(priv->pv->tpro == 1)
+          printf("Returning value of %x\n",priv->rcv.bytes[priv->idx]);
+        priv->rval = priv->rcv.bytes[priv->idx];
+
+        // Show I'm done
+        scanIoImmediate(priv->scan, priorityHigh);
+        scanIoImmediate(priv->scan, priorityMedium);
+        scanIoImmediate(priv->scan, priorityLow);
+        priv->pv->tpro = 0;
+//        priv->act=0;
+      }
+    }
+
+    /* ============================================================================================
+    *
+    * Here is the driver that outputs a string of words (and recieves a response simultaneously),
+    * and then returns a selected word from the response.
+    *
+    * ============================================================================================ */
+
+    for(chain=ellFirst(&read16Chain); chain != 0; chain=ellNext(chain))
+    {
+      struct privateData  *priv = (struct privateData *)chain;
+      int status;
+
+      if(priv->act!=0)
+      {
+        // Log the message going out if in verbose mode
+        if(priv->tpro == 1)
+        {
+          printf("\nRead16_Driver\nWriting(8) 0x%1x < ",priv->chipSelect);
+          for(uint32_t i=0; i<priv->len; i++)
+            printf("%04x ", priv->xmt.words[i]);
+          printf(" >\n");
+        }
+
+        // Select the chip and do the transaction
+        chipSelect(priv->chipSelect);
+
+        status = doSPITransaction16(priv->server->handle, priv->len*sizeof(uint16_t), priv->xmt.words, priv->rcv.words );
+        if(status < 0)
+        {
+          printf(" doSPITransaction16 to %s[%d] failed (6)\n",priv->pv->name, priv->server->handle);
+          exit(1);
+        }
+
+        // Log the message I got back if in verbose mode
+        if(priv->tpro == 1)
+        {
+          printf("Reading(16) 0x%1x < ",priv->chipSelect);
+          for(uint8_t i=0; i<priv->len ; i++)
+            printf("%04x ", priv->rcv.words[i]);
+          printf(" >\n");
+        }
+
+        // Get data to return
+        if(priv->tpro == 1)
+          printf("Returning value of %x\n",priv->rcv.words[priv->idx]);
+        priv->rval = priv->rcv.bytes[priv->idx];
+
+        // Show I'm done
+        callbackRequest(&priv->cb);
+        priv->act=0;
+      }
+    }
+
+
+
 #endif
   } while(1);
 }
@@ -1334,7 +1342,6 @@ static int parseLink(const char *linkLine, struct privateData *priv)
       // See if I can find the right entry in the table
       for(i=0; i<(sizeof(deviceDrivers)/sizeof(deviceDriverEntry)); i++)
       {
-        printf("Looking at %s\n",deviceDrivers[i].driverName);
         // now, put this definition in the right list
         if( (strlen(priv->driverName) == strlen(deviceDrivers[i].driverName) ) && (!strcasecmp(priv->driverName, deviceDrivers[i].driverName) ) )
         {
@@ -1426,34 +1433,27 @@ static int parseLink(const char *linkLine, struct privateData *priv)
   return 0;
 }
 
+/** ****************************************************************************************
+ *
+ * Common GetIoIntrInfo routine
+ *
+ * *****************************************************************************************/
+static long getIoIntrInfo(int dir, dbCommon *prec, IOSCANPVT *io)
+{
+  struct privateData *priv=prec->dpvt;
+  if(priv)
+  {
+      *io = priv->scan;
+  }
+  return 0;
+}
+
 
 /* =========================================================================================
  *
  * Start of the actual db routines (as opposed to the support bits)
  *
  * ========================================================================================= */
-
-
-
-// Lets start with the callback function here
-static void aiCallback(CALLBACK *cb)
-{
-  aiRecord* prec;             // Pointer to this specific record
-  struct privateData* priv;   // Private Data pointer for this
-  rset* prset;
-
-  callbackGetUser(prec,cb);
-  prset=(rset*)prec->rset;
-  priv=prec->dpvt;
-
-  if(prec->tpro)
-    printf("Inside Callback\n");
-
-  dbScanLock((dbCommon*)prec);    // Lock this record
-  prec->rval=priv->rval;          // update the rval
-  (*prset->process)((dbCommon *) prec);   // Now, lets process this record
-  dbScanUnlock((dbCommon *)prec); // all done.
-}
 
 // Initialize the AI record to get it prepared to use.
 long init_AI(aiRecord *prec)
@@ -1475,21 +1475,9 @@ long init_AI(aiRecord *prec)
   // If this is a constant, set it up
   recGblInitConstantLink(&prec->inp,DBF_ULONG,&start);
 
-  // Setup for background completion
-  switch(prec->inp.type)
-  {
-    case (INST_IO):
-      callbackSetCallback(aiCallback, &priv->cb);
-      callbackSetPriority(priorityLow, &priv->cb);
-      callbackSetUser(prec, &priv->cb);
-      break;
-
-    default:
-      snprintf(msg, sizeof(msg),"DevAiTestAsyn(int_record) Illegal Input Field(%d)\n",prec->inp.type);
-      recGblRecordError(S_db_badField, (void *) prec, msg);
-      return(S_db_badField);
-      break;
-  }
+  scanIoInit(&priv->scan);
+  priv->tpro = prec->tpro;
+  priv->act=1;
 
   return 0;
 }
@@ -1498,27 +1486,15 @@ long read_AI(aiRecord *prec)
 {
   struct privateData* priv=prec->dpvt;
 
+
   if(!priv)
   {
+    priv->tpro = prec->tpro;
     (void)recGblSetSevr(prec, COMM_ALARM, INVALID_ALARM);
     return 0;
   }
 
-
-  if( ! prec->pact )
-  {
-    /* start async operation */
-    priv->tpro=prec->tpro;
-    priv->act=1;
-    prec->pact=TRUE;
-    return 0;
-  }
-  else
-  {
-    /* complete operation */
-    priv->act=0;
-    prec->pact=FALSE;
-  }
+  prec->rval = priv->rval;
   return 0;
 }
 
@@ -1536,7 +1512,7 @@ struct
   NULL,
   NULL,
   init_AI,
-  NULL,
+  getIoIntrInfo,
   read_AI,
   NULL
 };
@@ -1738,7 +1714,7 @@ static long read_MBBIDirect(mbbiDirectRecord *prec)
   {
     /* complete operation */
     prec->pact=FALSE;
-    priv->act=0;
+    priv->act=1;
   }
   return 0;
 }
