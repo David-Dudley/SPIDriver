@@ -16,8 +16,14 @@ dbLoadDatabase "${TOP}/dbd/testIoc.dbd"
 testIoc_registerRecordDeviceDriver pdbbase
 
 #define my SPI port
-#             MyName    Device                  Mode    Bits    Speed
-addSPIDevice("mySPI",   "/dev/spidev0.0",       1,      8,      300000)
+# for a Beaglebone Black, use SPI channel 0.0
+#               Device                      Mode    Bits    Speed
+addSPIDevice("mySPI", "/dev/bone/spi/0.0", 1,      8,      500000)
+
+# For a Bleaglebone AI64, use SPI channel 6.0
+#addSPIDevice("mySPI", "/dev/bone/spi/6.0",  1,      8,      500000)
+
+#SPI Channel for the status LEDS
 addSPIDevice("StatusLEDS", "/dev/spidev1.1",    1,      8,      300000)
 
 
