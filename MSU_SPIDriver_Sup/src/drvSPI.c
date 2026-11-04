@@ -119,6 +119,7 @@ ELLLIST read816Chain;       /// chain of 8.16-bit input devices
 ELLLIST read16Chain;        /// chain of 16-bit input devices
 ELLLIST ads114Chain;        /// chain of ADS114 input devices
 ELLLIST write8Chain;        /// chain of 8-bit output devices
+ELLLIST write816Chain;      /// Chain of 8.16-bit output devices
 ELLLIST write16Chain;       /// chain of 16-bit output devices
 
 /** *********************************************************************************
@@ -930,6 +931,7 @@ static deviceDriverEntry deviceDrivers[] =
   {"READ12", &read12Chain, 0 },
   {"READ16", &read16Chain, 0 },
   {"WRITE8", &write8Chain, 1},
+  {"WRITE8.16",&write816Chain, 2},
   {"WRITE16", &write16Chain, 0},
   {NULL, NULL}
 };
@@ -1036,7 +1038,8 @@ static void scannerThread(void *parm)
 
     /** ============================================================================================
     *
-    * Handle GPIO output requests.
+    * GPIO Output Chain
+    * Currently handles output requests.
     *
     * ============================================================================================ */
 
@@ -1059,7 +1062,9 @@ static void scannerThread(void *parm)
 
     /* ============================================================================================
     *
-    * Here is the driver that works for the Write8 chain
+    * Write8 chain
+    * Writes are handled as callbacks, so that data can be returned to the caller.  They do not happen
+    * based on Software Interrupts, so only callbacks are needed.
     *
     * ============================================================================================ */
 
@@ -1092,7 +1097,72 @@ static void scannerThread(void *parm)
 
     /* ============================================================================================
     *
-    * Here is the driver that works for the Write16 chain
+    * Write8.16 chain
+    * This  routine handles the special occurance where I'm sending an 8-bit command, followed by 16-bit data (i.e. DAC8562).
+    * Writes are handled as callbacks, so that data can be returned to the caller.  They do not happen
+    * based on Software Interrupts, so only callbacks are needed.
+    *
+    * ============================================================================================ */
+
+    for(chain=ellFirst(&write816Chain); chain != 0; chain=ellNext(chain))
+    {
+      struct privateData  *priv = (struct privateData *)chain;
+      if(priv->act !=0)
+      {
+        if(priv->tpro)
+          printf("Working on active write8.16 record, \"%s\" value=%04x\n",priv->pv->name, priv->rval);
+
+        // If I'm supposed to put data in the record, put it here
+        if(priv->indexsupplied)
+        {
+          priv->xmt.bytes[priv->idx+2] = priv->rval&255;
+          priv->xmt.bytes[priv->idx+1] = priv->rval>>8;
+        }
+
+        // now, I have to swap the bytes of the first word, since I need to send starting with byte 1
+        priv->xmt.bytes[1] = priv->xmt.bytes[0];
+
+        // Log the message going out if in verbose mode
+        if(priv->tpro != 0)
+        {
+          printf("Write8.16 Driver\nWriting(8) > ");
+          for(uint32_t i=1; i<priv->len+1; i++)
+            printf("%02x ", priv->xmt.bytes[i]);
+          printf("\n");
+        }
+
+        // Select the chip and do the transaction
+        chipSelect(priv->chipSelect);
+
+        // OK, this is special.  I need to transmit from the byte pointer, but I'm getting a word back.
+        doSPITransaction8(priv->server->handle, priv->len, priv->xmt.bytes+1, priv->rcv.bytes+1 );
+
+        // Log the message going out if in verbose mode
+        if(priv->tpro != 0)
+        {
+          printf("Received(8) > ");
+          for(uint32_t i=1; i<priv->len+1; i++)
+            printf("%02x ", priv->rcv.bytes[i]);
+          printf("\n");
+        }
+
+
+        // Get data to return
+        priv->rval = priv->rcv.bytes[priv->idx] | (priv->rcv.bytes[priv->idx+1] << 8);
+
+        chipSelect(15);
+
+        // Show I'm done
+        callbackRequest(&priv->cb);
+        priv->act=0;
+      }
+    }
+
+    /* ============================================================================================
+    *
+    * Write16 chain
+    * Writes are handled as callbacks, so that data can be returned to the caller.  They do not happen
+    * based on Software Interrupts, so only callbacks are needed.
     *
     * ============================================================================================ */
     for(chain=ellFirst(&write16Chain); chain != 0; chain=ellNext(chain))
@@ -1125,10 +1195,15 @@ static void scannerThread(void *parm)
     }
 
     // All doue with the output routines, next lets do the routine to read8
+
     /* ============================================================================================
     *
+    * Read8 handler
     * Here is the driver that outputs a string of bytes (and recieves a response simultaneously),
     * and then returns a selected byte from the response.
+    *
+    * These are handled as interrupt inputs, so processing is pretty quick.  The driver will repeatedly
+    * go through the chain at full speed, and if the value returned changes, it will update the PV.
     *
     * ============================================================================================ */
 
@@ -1142,7 +1217,7 @@ static void scannerThread(void *parm)
         // Log the message going out if in verbose mode
         if(priv->pv->tpro != 0)
         {
-          printf("\nRead8_Driver\nWriting(8) 0x%1x < ",priv->chipSelect);
+          printf("\nRead8_Driver\nWriting(8)[0x%1x] < ",priv->chipSelect);
           for(uint32_t i=0; i<priv->len; i++)
             printf("%02x ", priv->xmt.bytes[i]);
           printf(" >\n");
@@ -1158,33 +1233,48 @@ static void scannerThread(void *parm)
           exit(1);
         }
 
+        // output idle chip select
+        chipSelect(15);
+
         // Log the message I got back if in verbose mode
         if(priv->pv->tpro != 0)
         {
-          printf("Reading(8) 0x%1x < ",priv->chipSelect);
+          printf("Reading(8)[0x%1x] < ",priv->chipSelect);
           for(uint8_t i=0; i<priv->len ; i++)
             printf("%02x ", priv->rcv.bytes[i]);
           printf(" >\n");
         }
 
         // Get data to return
-        if(priv->pv->tpro == 1)
-          printf("Returning value of %x\n",priv->rcv.bytes[priv->idx]);
         priv->rval = priv->rcv.bytes[priv->idx];
 
-        // Show I'm done
-        scanIoImmediate(priv->scan, priorityHigh);
-        scanIoImmediate(priv->scan, priorityMedium);
-        scanIoImmediate(priv->scan, priorityLow);
-        priv->pv->tpro = 0;
+        // If the value changed, notify someone.
+        if(priv->rval != priv->lastVal)
+        {
+          if(priv->pv->tpro == 1)
+            printf("Returning value of %x\n",priv->rcv.bytes[priv->idx]);
+
+          // Show I'm done
+          scanIoImmediate(priv->scan, priorityHigh);
+          scanIoImmediate(priv->scan, priorityMedium);
+          scanIoImmediate(priv->scan, priorityLow);
+          priv->pv->tpro = 0;
+
+          // update the last value that I sent
+          priv->lastVal = priv->rval;
+        }
 //        priv->act=0;
       }
     }
 
     /* ============================================================================================
-    *
+    * Read16
     * Here is the driver that outputs a string of words (and recieves a response simultaneously),
     * and then returns a selected word from the response.
+    *
+    * Again,
+    * These are handled as interrupt inputs, so processing is pretty quick.  The driver will repeatedly
+    * go through the chain at full speed, and if the value returned changes, it will update the PV.
     *
     * ============================================================================================ */
 
@@ -1196,9 +1286,9 @@ static void scannerThread(void *parm)
       if(priv->act!=0)
       {
         // Log the message going out if in verbose mode
-        if(priv->tpro == 1)
+        if(priv->tpro != 0)
         {
-          printf("\nRead16_Driver\nWriting(8) 0x%1x < ",priv->chipSelect);
+          printf("\nRead16_Driver\nWriting(16)[0x%1x] < ",priv->chipSelect);
           for(uint32_t i=0; i<priv->len; i++)
             printf("%04x ", priv->xmt.words[i]);
           printf(" >\n");
@@ -1214,23 +1304,36 @@ static void scannerThread(void *parm)
           exit(1);
         }
 
+        // output idle chip select
+        chipSelect(15);
+
         // Log the message I got back if in verbose mode
-        if(priv->tpro == 1)
+        if(priv->tpro != 0)
         {
-          printf("Reading(16) 0x%1x < ",priv->chipSelect);
+          printf("Reading(16)[0x%1x] < ",priv->chipSelect);
           for(uint8_t i=0; i<priv->len ; i++)
             printf("%04x ", priv->rcv.words[i]);
           printf(" >\n");
         }
 
         // Get data to return
+        priv->rval = priv->rcv.words[priv->idx];
         if(priv->tpro == 1)
           printf("Returning value of %x\n",priv->rcv.words[priv->idx]);
-        priv->rval = priv->rcv.bytes[priv->idx];
 
-        // Show I'm done
-        callbackRequest(&priv->cb);
-        priv->act=0;
+        // If the value has changed, notify someone.
+        if(priv->rval != priv->lastVal)
+        {
+          // Show I'm done
+          scanIoImmediate(priv->scan, priorityHigh);
+          scanIoImmediate(priv->scan, priorityMedium);
+          scanIoImmediate(priv->scan, priorityLow);
+          priv->pv->tpro = 0;
+
+          // Update the last value that I sent
+          priv->lastVal = priv->rval;
+        }
+//        priv->act=0;
       }
     }
 
@@ -1373,19 +1476,20 @@ static int parseLink(const char *linkLine, struct privateData *priv)
   {
     // Start pulling in the bytes to send to the device.  They can be separated by whitespace or a comma.
     // first, lets allocate a buffer (both BYTE and WORD) the remaining size of the line.  I'll resize it later
-    if(priv->dataType == 0)
-      priv->xmt.words = (uint16_t *) callocMustSucceed(sizeof(uint16_t), strlen(p), "Couldn't allocate WORD buffer");
-    else
+    if(priv->dataType == 1)
       priv->xmt.bytes = (uint8_t *)  callocMustSucceed(sizeof(uint8_t), strlen(p), "Couldn't allocate BYTE buffer");
+    else
+      priv->xmt.words = (uint16_t *) callocMustSucceed(sizeof(uint16_t), strlen(p), "Couldn't allocate WORD buffer");
 
     // Now, start pulling in words(bytes) until I either run to the end of the line, or I come across something that isn't valid
+    // Note that if this is a byte sized transrer, I allocate a byte size buffer, otherwise it is a word size buffer.
     for(priv->len=0; *p; priv->len++)
     {
       // Lets assume I'm pointing at the start of a valid number
-      if(priv->dataType == 0)
-        priv->xmt.words[priv->len] = strtol(p, &p, 0);
+      if(priv->dataType == 1)
+        priv->xmt.bytes[priv->len] = strtol(p, &p, 0);    // Data is byte sized
       else
-        priv->xmt.bytes[priv->len] = strtol(p, &p, 0);
+        priv->xmt.words[priv->len] = strtol(p, &p, 0);    // data is not -pure- byte sized
 
       //OK, valid conditions at this point are either end-of-string, a comma, or whitespace
       while ((*p ==',' || *p == ' ') && *p )  // Skip whitespace
@@ -1399,32 +1503,20 @@ static int parseLink(const char *linkLine, struct privateData *priv)
   }
 
   // OK, I've got all the data to transmit, lets resize the buffer down to what is needed.
+  // Note that if this is an 8-bit transmission and reception, I allocate a byte size buffer.
+  // Anything else gets word size buffers.
   if(priv->len)
   {
-    if(priv->dataType == 0)
-      priv->xmt.words = (uint16_t *) realloc(priv->xmt.words, sizeof(uint16_t)*priv->len);
-    else
+    if(priv->dataType == 1)
       priv->xmt.bytes = (uint8_t *) realloc(priv->xmt.bytes, sizeof(uint8_t)*priv->len);
+    else
+      priv->xmt.words = (uint16_t *) realloc(priv->xmt.words, sizeof(uint16_t)*priv->len);
 
     // Finally, allocate a buffer for the received data
-    if(priv->dataType == 0)
-    {
-      priv->rcv.words = (uint16_t *) callocMustSucceed(sizeof(uint16_t), priv->len, "Rcv Buffer Allocation Failed");
-    }
+    if(priv->dataType == 1)
+      priv->rcv.bytes = (uint8_t *) callocMustSucceed(sizeof(uint8_t), priv->len, "Rcv Buffer Allocation Failed");
     else
-    {
-      if(priv->dataType == 1)
-      {
-        priv->rcv.bytes = (uint8_t *) callocMustSucceed(sizeof(uint8_t), priv->len, "Rcv Buffer Allocation Failed");
-      }
-      else
-      {
-        if(priv->dataType == 2)
-        {
-          priv->rcv.bytes = (uint8_t *) callocMustSucceed(sizeof(uint8_t), 2*priv->len, "Rcv Buffer Allocation Failed");
-        }
-      }
-    }
+      priv->rcv.words = (uint16_t *) callocMustSucceed(sizeof(uint16_t), priv->len, "Rcv Buffer Allocation Failed");
   }
   // At this point, I should have the transmit buffer filled (with bytes or words...),
   //  the length I'm tranmitting set
@@ -1460,7 +1552,6 @@ long init_AI(aiRecord *prec)
 {
   struct privateData* priv;
   unsigned long start;
-  char msg[80];
 
   /* do all the initialization stuff I need for an AI. */
   // Allocate a private data structure for this record and link it to the record
@@ -1636,24 +1727,6 @@ epicsExportAddress(dset,SPIdigAO);
 
 
 
-
-// Lets start with the callback function here
-static void mbbiDirectCallback(CALLBACK* cb)
-{
-  mbbiDirectRecord* prec;
-  struct privateData* priv;
-  rset* prset;
-
-  callbackGetUser(prec,cb);
-  prset=(rset*)prec->rset;
-  priv=prec->dpvt;
-
-  dbScanLock((dbCommon*)prec);
-  prec->rval=priv->rval;
-  (*prset->process)((dbCommon *) prec);
-  dbScanUnlock((dbCommon *) prec);
-}
-
 // Initialize the MBBI record to get it prepared to use.
 static long init_MBBIDirect(mbbiDirectRecord *prec)
 {
@@ -1677,9 +1750,9 @@ static long init_MBBIDirect(mbbiDirectRecord *prec)
   switch(prec->inp.type)
   {
     case (INST_IO):
-      callbackSetCallback(mbbiDirectCallback, &priv->cb);
-      callbackSetPriority(priorityLow, &priv->cb);
-      callbackSetUser(prec, &priv->cb);
+      scanIoInit(&priv->scan);
+      priv->tpro = prec->tpro;
+      priv->act=1;
       break;
 
     default:
@@ -1697,25 +1770,13 @@ static long read_MBBIDirect(mbbiDirectRecord *prec)
 
   if(!priv)
   {
+    priv->tpro = prec->tpro;
     (void)recGblSetSevr(prec, COMM_ALARM, INVALID_ALARM);
     return 0;
   }
 
   priv->tpro=prec->tpro;
-
-  if( ! prec->pact )
-  {
-    /* start async operation */
-    priv->act=1;
-    prec->pact=TRUE;
-    callbackSetUser(prec,&priv->cb);
-  }
-  else
-  {
-    /* complete operation */
-    prec->pact=FALSE;
-    priv->act=1;
-  }
+  prec->rval = priv->rval;
   return 0;
 }
 
@@ -1732,7 +1793,7 @@ struct {
   NULL,
   NULL,
   init_MBBIDirect,
-  NULL,
+  getIoIntrInfo,
   read_MBBIDirect,
   NULL
 };
