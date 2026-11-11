@@ -4,53 +4,87 @@
 #! DBDEND
 
 
-
 #Digital to Analog Driver
 record(ao, "${P}${S}DAC8562_N0001:RST") {
   field(DTYP, "SPIdig")
   field(OUT, "@${PORT} -C ${SELECT} -i 1 WRITE8.16  0x2f 0 0")
   field(DESC, "Reset the DAC8562")
-  field(TPRO,1)
 }
 
 record(ao, "${P}${S}DAC8562_N0001:VREF_INT") {
   field(DTYP, "SPIdig")
   field(OUT, "@${PORT} -C ${SELECT} -i 1 WRITE8.16  0x3f 0 0")
   field(DESC, "Select/Deselect DAC8562 Internal Ref")
-  field(TPRO,1)
 }
 
 record(ao, "${P}${S}DAC8562_N0001:SEL_GAIN") {
   field(DTYP, "SPIdig")
   field(OUT, "@${PORT} -C ${SELECT} -i 1 WRITE8.16  0x02 0 0")
   field(DESC, "Select DAC8562 Channel Gain")
-  field(TPRO,1)
-}
-
-record(ao, "${P}${S}DAC8562_N0001:SEL_GAIN") {
-  field(DTYP, "SPIdig")
-  field(OUT, "@${PORT} -C ${SELECT} -i 1 WRITE8.16  0 0 0")
-  field(DESC, "Select DAC8562 Channel Gain")
-  field(TPRO,1)
 }
 
 record(ao, "${P}${S}DAC8562_N0001:ENABLE_CHAN") {
   field(DTYP, "SPIdig")
   field(OUT, "@${PORT} -C ${SELECT} -i 1 WRITE8.16  0x20 0 0")
   field(DESC, "Power up DAC8562 Channel")
-  field(TPRO,1)
 }
 
 record(ao, "${P}${S}DAC8562_N0001:PUT_DAC_A") {
   field(DTYP, "SPIdig")
-  field(OUT, "@${PORT} -C ${SELECT} -i 1 WRITE8.16  0x10 0 0")
+  field(OUT, "@${PORT} -C ${SELECT} -i 1 WRITE8.16  0x18 0 0")
   field(DESC, "Write DAC8562 Output A")
-  field(TPRO,1)
+  field(OMSL, "supervisory")
 }
 
 record(ao, "${P}${S}DAC8562_N0001:PUT_DAC_B") {
   field(DTYP, "SPIdig")
-  field(OUT, "@${PORT} -C ${SELECT} -i 1 WRITE8.16  0x11 0 0")
+  field(OUT, "@${PORT} -C ${SELECT} -i 1 WRITE8.16  0x19 0 0")
   field(DESC, "Write DAC8562 Output B")
-  field(TPRO,1)
+  field(OMSL, "supervisory")
 }
+
+record(seq, "${P}${S}DAC8562_N0001:STRT") {
+  field(DESC, "Initialize the chip")
+  field(SCAN, "Passive")
+  field(PINI,"YES")
+  field(DOL0, "1")
+  field(LNK0, "${P}${S}DAC8562_N0001:RST PP")
+  field(DLY1, ".1")
+  field(DOL1, "1")
+  field(LNK1, "${P}${S}DAC8562_N0001:VREF_INT PP")
+  field(DLY2, ".1")
+  field(DOL2, "0")
+  field(LNK2, "${P}${S}DAC8562_N0001:SEL_GAIN PP")
+  field(DLY3, ".1")
+  field(DOL3, "3")
+  field(LNK3, "${P}${S}DAC8562_N0001:ENABLE_CHAN PP")
+}
+
+record(mbboDirect, "${P}${S}VCO_N0001:CTRL") {
+  field(DESC, "Control Latch on the VCO Controller")
+  field(DTYP, "SPIdig")
+  field(OUT, "@${PORT} -C ${CONTROLCS} -i 0 WRITE8 0")
+}
+
+#! Further lines contain data used by VisualDCT
+#! View(0,0,1.1)
+#! Record("${P}${S}DAC8562_N0001:RST",620,247,0,0,"${P}${S}DAC8562_N0001:RST")
+#! Field("${P}${S}DAC8562_N0001:RST.VAL",16777215,0,"${P}${S}DAC8562_N0001:RST.VAL")
+#! Record("${P}${S}DAC8562_N0001:VREF_INT",580,407,0,0,"${P}${S}DAC8562_N0001:VREF_INT")
+#! Field("${P}${S}DAC8562_N0001:VREF_INT.VAL",16777215,0,"${P}${S}DAC8562_N0001:VREF_INT.VAL")
+#! Record("${P}${S}DAC8562_N0001:SEL_GAIN",540,567,0,0,"${P}${S}DAC8562_N0001:SEL_GAIN")
+#! Field("${P}${S}DAC8562_N0001:SEL_GAIN.VAL",16777215,0,"${P}${S}DAC8562_N0001:SEL_GAIN.VAL")
+#! Record("${P}${S}DAC8562_N0001:ENABLE_CHAN",500,727,0,0,"${P}${S}DAC8562_N0001:ENABLE_CHAN")
+#! Field("${P}${S}DAC8562_N0001:ENABLE_CHAN.VAL",16777215,0,"${P}${S}DAC8562_N0001:ENABLE_CHAN.VAL")
+#! Record("${P}${S}DAC8562_N0001:PUT_DAC_A",880,53,0,0,"${P}${S}DAC8562_N0001:PUT_DAC_A")
+#! Record("${P}${S}DAC8562_N0001:PUT_DAC_B",880,253,0,1,"${P}${S}DAC8562_N0001:PUT_DAC_B")
+#! Record("${P}${S}DAC8562_N0001:STRT",40,221,0,1,"${P}${S}DAC8562_N0001:STRT")
+#! Field("${P}${S}DAC8562_N0001:STRT.LNK0",16777215,1,"${P}${S}DAC8562_N0001:STRT.LNK0")
+#! Link("${P}${S}DAC8562_N0001:STRT.LNK0","${P}${S}DAC8562_N0001:RST.VAL")
+#! Field("${P}${S}DAC8562_N0001:STRT.LNK1",16777215,1,"${P}${S}DAC8562_N0001:STRT.LNK1")
+#! Link("${P}${S}DAC8562_N0001:STRT.LNK1","${P}${S}DAC8562_N0001:VREF_INT.VAL")
+#! Field("${P}${S}DAC8562_N0001:STRT.LNK2",16777215,1,"${P}${S}DAC8562_N0001:STRT.LNK2")
+#! Link("${P}${S}DAC8562_N0001:STRT.LNK2","${P}${S}DAC8562_N0001:SEL_GAIN.VAL")
+#! Field("${P}${S}DAC8562_N0001:STRT.LNK3",16777215,1,"${P}${S}DAC8562_N0001:STRT.LNK3")
+#! Link("${P}${S}DAC8562_N0001:STRT.LNK3","${P}${S}DAC8562_N0001:ENABLE_CHAN.VAL")
+#! Record("${P}${S}VCO_N0001:CTRL",40,41,0,1,"${P}${S}VCO_N0001:CTRL")

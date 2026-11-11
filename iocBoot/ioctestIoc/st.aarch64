@@ -16,27 +16,24 @@ dbLoadDatabase "${TOP}/dbd/testIoc.dbd"
 testIoc_registerRecordDeviceDriver pdbbase
 
 #define my SPI port
-#             MyName    Device                  Mode    Bits    Speed
-
-#define my SPI port
 # for a Beaglebone Black, use SPI channel 0.0
-#               Device                      Mode    Bits    Speed
-#addSPIDevice("mySPI", "/dev/bone/spi/0.0", 1,      8,      500000)
+#                           Device                     Mode    Bits    Speed
+#addSPIDevice("mySPI",      "/dev/bone/spi/0.0",        1,      8,      500000)
+#addSPIDevice("StatusLEDS", "/dev/bone/spi/1.1",        1,      8,      500000)
 
 # For a Bleaglebone AI64, use SPI channel 6.0
-addSPIDevice("mySPI", "/dev/bone/spi/6.0",  1,      8,      500000)
-
-#SPI Channelfor the Status LEDS
-addSPIDevice("StatusLEDS", "/dev/spidev1.1",    1,      8,      300000)
+addSPIDevice("mySPI",       "/dev/bone/spi/6.0",        1,      8,      500000)
+addSPIDevice("StatusLEDS",  "/dev/bone/spi/6.1"         1,      8,      300000)
 
 
 ## Load record instances
-dbLoadRecords "${TOP}/db/Diagnostics.db",               "PORT=StatusLEDS, P=dudleyd_, S=test:, user=dudleydS"
-dbLoadRecords "${TOP}/db/GPIO.vdb",                     "PORT=mySPI, P=dudleyd_, S=test:, user=dudleyd"
-dbLoadRecords "${TOP}/db/ADS114.db"                     "PORT=mySPI, P=dudleyd_, S=test:, user=dudleyd"
-#dbLoadRecords "${TOP}/db/AMC7823Support.vdb",          "PORT=mySPI, P=dudleyd_, S=test:, user=dudleyd"
-#dbLoadRecords "${TOP}/db/AMC7823Analogs.vdb",          "PORT=mySPI, P=dudleyd_, S=test:, user=dudleyd"
-#dbLoadRecords "${TOP}/db/gatedAmplifierTester.vdb",    "PORT=mySPI, P=dudleyd_, S=test:, user=dudleyd"
+dbLoadRecords "${TOP}/db/Diagnostics.db",               "P=dudleyd_, S=test:, user=dudleyd, PORT=StatusLEDS"
+dbLoadRecords "${TOP}/db/GPIO.vdb",                     "P=dudleyd_, S=test:, user=dudleyd, PORT=mySPI"
+dbLoadRecords "${TOP}/db/DAC8562.vdb"                    "PORT=mySPI, SELECT=1, CONTROLCS=2, P=dudleyd_, S=test:, user=dudleyd"
+#dbLoadRecords "${TOP}/db/ADS114.db"                     "P=dudleyd_, S=test:, user=dudleyd, PORT=mySPI"
+#dbLoadRecords "${TOP}/db/AMC7823Support.vdb",          "P=dudleyd_, S=test:, user=dudleyd"
+#dbLoadRecords "${TOP}/db/AMC7823Analogs.vdb",          "P=dudleyd_, S=test:, user=dudleyd"
+#dbLoadRecords "${TOP}/db/gatedAmplifierTester.vdb",    "P=dudleyd_, S=test:, user=dudleyd"
 
 #- Set this to see messages from mySub
 #-var mySubDebug 1
