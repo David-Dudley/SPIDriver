@@ -8,7 +8,7 @@
 record(ao, "${P}${S}AIM_NADS114:REBT_CMD") {
   field(DTYP, "SPIdig")
   field(DESC, "Reset the ADS114 Chip")
-  field(OUT, "@${DEV} -C 1  WRITE8  0x06 ")
+  field(OUT, "@${PORT} -C ${SELECT}  WRITE8  0x06 ")
 }
 
 # ****************************************************************************************
@@ -19,7 +19,7 @@ record(ai, "${P}${S}AIM_NADS114:ID_RD") {
   field(DTYP, "SPIdig")
   field(DESC, "Read the ID Reg")
 #                                    Reg 0  #  0
-  field(INP, "@${DEV} -C 1 -i 2 READ8  0x20, 0, 0")
+  field(INP, "@${PORT} -C ${SELECT} -i 2 READ8  0x20, 0, 0")
   field(SCAN, "10 second")
   field(PINI, "YES")
 }
@@ -28,7 +28,7 @@ record(ai, "${P}${S}AIM_NADS114:ID_RD") {
 record(mbbiDirect, "${P}${S}AIM_NADS114:STAT_RSET") {
   field(DTYP, "SPIdig")
   field(DESC, "Read the Device Status Reg")
-  field(INP, "@${DEV} -C 1 -i 2 READ8  0x21, 0, 0")
+  field(INP, "@${PORT} -C ${SELECT} -i 2 READ8  0x21, 0, 0")
   field(SCAN, "1 second")
   field(PINI, "YES")
   field(FLNK, "${P}${S}AIM_NADS114:INMUX_RSET")
@@ -37,118 +37,118 @@ record(mbbiDirect, "${P}${S}AIM_NADS114:STAT_RSET") {
 record(mbboDirect, "${P}${S}AIM_NADS114:STAT_CSET") {
   field(DTYP, "SPIdig")
   field(DESC, "Write the Device Status Reg")
-  field(OUT, "@${DEV} -C 1 -i 2 WRITE8  0x41, 0, 0")
+  field(OUT, "@${PORT} -C ${SELECT} -i 2 WRITE8  0x41, 0, 0")
 }
 
 #Read and Write the input Multiplexer register
 record(ai, "${P}${S}AIM_NADS114:INMUX_RSET") {
   field(DTYP, "SPIdig")
   field(DESC, "Read the Input Multiplexer Reg")
-  field(INP, "@${DEV} -C 1 -i 2 READ8  0x22, 0, 0")
+  field(INP, "@${PORT} -C ${SELECT} -i 2 READ8  0x22, 0, 0")
   field(FLNK, "${P}${S}AIM_NADS114:PGA_RSET")
 }
 
 record(ao, "${P}${S}AIM_NADS114:INMUX_CSET") {
   field(DTYP, "SPIdig")
   field(DESC, "Write the Input Multiplexer Reg")
-  field(OUT, "@${DEV} -C 1 -i 2 WRITE8  0x42, 0, 0")
+  field(OUT, "@${PORT} -C ${SELECT} -i 2 WRITE8  0x42, 0, 0")
 }
 
 #Read and Write the PGA Register
 record(ai, "${P}${S}AIM_NADS114:PGA_RSET") {
   field(DTYP, "SPIdig")
   field(DESC, "Read the Gain Setting Reg")
-  field(INP, "@${DEV} -C 1 -i 2 READ8  0x23, 0, 0")
+  field(INP, "@${PORT} -C ${SELECT} -i 2 READ8  0x23, 0, 0")
   field(FLNK, "${P}${S}AIM_NADS114:RATE_RSET")
 }
 
 record(ao, "${P}${S}AIM_NADS114:PGA_CSET") {
   field(DTYP, "SPIdig")
   field(DESC, "Write the Gain Setting Reg")
-  field(OUT, "@${DEV} -C 1 -i 2 WRITE8  0x43, 0, 0")
+  field(OUT, "@${PORT} -C ${SELECT} -i 2 WRITE8  0x43, 0, 0")
 }
 
 #Read and Write the Data Rate Register to get the sample speed
 record(ai, "${P}${S}AIM_NADS114:RATE_RSET") {
   field(DTYP, "SPIdig")
   field(DESC, "Read the Data Rate Sample Reg")
-  field(INP, "@${DEV} -C 1 -i 2 READ8  0x24, 0, 0")
+  field(INP, "@${PORT} -C ${SELECT} -i 2 READ8  0x24, 0, 0")
   field(FLNK, "${P}${S}AIM_NADS114:REF_RSET")
 }
 
 record(ao, "${P}${S}AIM_NADS114:RATE_CSET") {
   field(DTYP, "SPIdig")
   field(DESC, "Write the Data Rate Sample Reg")
-  field(OUT, "@${DEV} -C 1 -i 2 WRITE8  0x44, 0, 0")
+  field(OUT, "@${PORT} -C ${SELECT} -i 2 WRITE8  0x44, 0, 0")
 }
 
 #Read and Write the REF Register
 record(ai, "${P}${S}AIM_NADS114:REF_RSET") {
   field(DTYP, "SPIdig")
   field(DESC, "Read the Reference Control Reg")
-  field(INP, "@${DEV} -C 1 -i 2 READ8  0x25, 0, 0")
+  field(INP, "@${PORT} -C ${SELECT} -i 2 READ8  0x25, 0, 0")
   field(FLNK, "${P}${S}AIM_NADS114:IDACMAG_RSET")
 }
 
 record(ao, "${P}${S}AIM_NADS114:REF_CSET") {
   field(DTYP, "SPIdig")
   field(DESC, "Write the Reference Control Reg")
-  field(OUT, "@${DEV} -C 1 -i 2 WRITE8  0x45, 0, 0")
+  field(OUT, "@${PORT} -C ${SELECT} -i 2 WRITE8  0x45, 0, 0")
 }
 
 #Read and Write the IDACMAG Register
 record(ai, "${P}${S}AIM_NADS114:IDACMAG_RSET") {
   field(DTYP, "SPIdig")
   field(DESC, "Read the Excitation Current Reg")
-  field(INP, "@${DEV} -C 1 -i 2 READ8  0x26, 0, 0")
+  field(INP, "@${PORT} -C ${SELECT} -i 2 READ8  0x26, 0, 0")
   field(FLNK, "${P}${S}AIM_NADS114:IDACMUX_RSET")
 }
 
 record(ao, "${P}${S}AIM_NADS114:IDACMAG_CSET") {
   field(DTYP, "SPIdig")
   field(DESC, "Write the Excitation Current Reg")
-  field(OUT, "@${DEV} -C 1 -i 2 WRITE8  0x46, 0, 0")
+  field(OUT, "@${PORT} -C ${SELECT} -i 2 WRITE8  0x46, 0, 0")
 }
 
 #Read and Write the IDACMUX Register
 record(ai, "${P}${S}AIM_NADS114:IDACMUX_RSET") {
   field(DTYP, "SPIdig")
   field(DESC, "Read the Excitation Multiplexer Reg")
-  field(INP, "@${DEV} -C 1 -i 2 READ8  0x27, 0, 0")
+  field(INP, "@${PORT} -C ${SELECT} -i 2 READ8  0x27, 0, 0")
   field(FLNK, "${P}${S}AIM_NADS114:VBIAS_RSET")
 }
 
 record(ao, "${P}${S}AIM_NADS114:IDACMUX_CSET") {
   field(DTYP, "SPIdig")
   field(DESC, "Write the Excitation Multiplexer Reg")
-  field(OUT, "@${DEV} -C 1 -i 2 WRITE8  0x47, 0, 0")
+  field(OUT, "@${PORT} -C ${SELECT} -i 2 WRITE8  0x47, 0, 0")
 }
 
 #Read and Write the VBIAS Register
 record(ai, "${P}${S}AIM_NADS114:VBIAS_RSET") {
   field(DTYP, "SPIdig")
   field(DESC, "Read the Sensor Biasing Reg")
-  field(INP, "@${DEV} -C 1 -i 2 READ8  0x28, 0, 0")
+  field(INP, "@${PORT} -C ${SELECT} -i 2 READ8  0x28, 0, 0")
   field(FLNK, "${P}${S}AIM_NADS114:SYS_RSET")
 }
 
 record(ao, "${P}${S}AIM_NADS114:VBIAS_CSET") {
   field(DTYP, "SPIdig")
   field(DESC, "Write the Sensor Biasing Reg")
-  field(OUT, "@${DEV} -C 1 -i 2 WRITE8  0x48, 0, 0")
+  field(OUT, "@${PORT} -C ${SELECT} -i 2 WRITE8  0x48, 0, 0")
 }
 
 #Read and Write the SYS Register
 record(ai, "${P}${S}AIM_NADS114:SYS_RSET") {
   field(DTYP, "SPIdig")
   field(DESC, "Read the System Cntrl Reg")
-  field(INP, "@${DEV} -C 1 -i 2 READ8  0x29, 0, 0")
+  field(INP, "@${PORT} -C ${SELECT} -i 2 READ8  0x29, 0, 0")
 }
 
 record(ao, "${P}${S}AIM_NADS114:SYS_CSET") {
   field(DTYP, "SPIdig")
   field(DESC, "Write the System Cntrl Reg")
-  field(OUT, "@${DEV} -C 1 -i 2 WRITE8  0x49, 0, 0")
+  field(OUT, "@${PORT} -C ${SELECT} -i 2 WRITE8  0x49, 0, 0")
 }
 
 # **********************************************************************************************
@@ -161,7 +161,7 @@ record(ai, "${P}${S}AIM_NADS114:T_RD") {
 #                                               ACOM   1   20SPS        Excit EXC    NO   4 Smpl
 #                                               MUX   PGA   Rate  Ref   EXCIT EXC2  BIAS  SYS
 #                                     Reg 2  #   2      3     4     5     6     7     8     9
-  field(INP, "@${DEV} -C 1 ADS114READ  0x42, 7, 0x01, 0x00, 0x3e, 0x3a, 0x00, 0xff, 0x00, 0x58")
+  field(INP, "@${PORT} -C ${SELECT} ADS114READ  0x42, 7, 0x01, 0x00, 0x3e, 0x3a, 0x00, 0xff, 0x00, 0x58")
   field(SCAN, "Passive")
   field(LINR, "LINEAR")
   field(ASLO, "0.000076292")
@@ -182,7 +182,7 @@ record(ai, "${P}${S}AIM_NADS114:AVDD_RD") {
 #                                               ACOM   1   20SPS       Excit EXC    NO   4 Smpl
 #                                               MUX   PGA   Rate  Ref   EXCIT EXC2  BIAS  SYS
 #                                     Reg 2  #   2      3     4     5     6     7     8     9
-  field(INP, "@${DEV} -C 1 ADS114READ  0x42, 7, 0x01, 0x00, 0x3e, 0x3a, 0x00, 0xff, 0x00, 0x60")
+  field(INP, "@${PORT} -C ${SELECT} ADS114READ  0x42, 7, 0x01, 0x00, 0x3e, 0x3a, 0x00, 0xff, 0x00, 0x60")
   field(SCAN, "Passive")
   field(LINR, "LINEAR")
   field(ASLO, "0.000076292")
@@ -199,7 +199,7 @@ record(ai, "${P}${S}AIM_NADS114:DVDD_RD") {
 #                                               ACOM   1   20SPS       Excit EXC    NO   4 Smpl
 #                                               MUX   PGA   Rate  Ref   EXCIT EXC2  BIAS  SYS
 #                                     Reg 2  #   2      3     4     5     6     7     8     9
-  field(INP, "@${DEV} -C 1 ADS114READ  0x42, 7, 0x01, 0x00, 0x037, 0x3a, 0x00, 0xff, 0x00, 0x80")
+  field(INP, "@${PORT} -C ${SELECT} ADS114READ  0x42, 7, 0x01, 0x00, 0x037, 0x3a, 0x00, 0xff, 0x00, 0x80")
   field(SCAN, "Passive")
   field(LINR, "LINEAR")
   field(ASLO, "0.000076292")
@@ -216,7 +216,7 @@ record(ai, "${P}${S}AIM_NADS114:IN_RD_0") {
 #                                                 0   Byp   20SPS      Excit EXC    NO   Sampl
 #                                               MUX   PGA   Rate  Ref   EXCIT EXC2  BIAS  SYS
 #                                     Reg 2  #   2      3     4     5     6     7     8     9
-  field(INP, "@${DEV} -C 1  ADS114READ  0x42, 7, 0x0c, 0x00, 0x34, 0x3a, 0x07, 0xff, 0x00, 0x18")
+  field(INP, "@${PORT} -C ${SELECT}  ADS114READ  0x42, 7, 0x0c, 0x00, 0x34, 0x3a, 0x07, 0xff, 0x00, 0x18")
 #field(SCAN, "1 second")
   field(LINR, "LINEAR")
   field(AOFF, "32768")
@@ -232,7 +232,7 @@ record(ai, "${P}${S}AIM_NADS114:IN_RD_1") {
 #                                                 1   Byp   20SPS       Excit EXC    NO   Sampl
 #                                               MUX   PGA   Rate  Ref   EXCIT EXC2  BIAS  SYS
 #                                     Reg 2  #   2      3     4     5     6     7     8     9
-  field(INP, "@${DEV} -C 1  ADS114READ  0x42, 7, 0x1c, 0x00, 0x34, 0x3a, 0x07, 0xff, 0x00, 0x18")
+  field(INP, "@${PORT} -C ${SELECT}  ADS114READ  0x42, 7, 0x1c, 0x00, 0x34, 0x3a, 0x07, 0xff, 0x00, 0x18")
 #field(SCAN, "1 second")
   field(LINR, "LINEAR")
   field(AOFF, "32768")
@@ -248,7 +248,7 @@ record(ai, "${P}${S}AIM_NADS114:IN_RD_2") {
 #                                                 2   Byp   20SPS       Excit EXC    NO   Sampl
 #                                               MUX   PGA   Rate  Ref   EXCIT EXC2  BIAS  SYS
 #                                     Reg 2  #   2      3     4     5     6     7     8     9
-  field(INP, "@${DEV} -C 1  ADS114READ  0x42, 7, 0x2c, 0x00, 0x34, 0x3a, 0x07, 0xff, 0x00, 0x18")
+  field(INP, "@${PORT} -C ${SELECT}  ADS114READ  0x42, 7, 0x2c, 0x00, 0x34, 0x3a, 0x07, 0xff, 0x00, 0x18")
 #field(SCAN, "1 second")
   field(LINR, "LINEAR")
   field(AOFF, "32768")
@@ -264,7 +264,7 @@ record(ai, "${P}${S}AIM_NADS114:IN_RD_3") {
 #                                                 1   Byp   20SPS       Excit EXC    NO   Sampl
 #                                               MUX   PGA   Rate  Ref   EXCIT EXC2  BIAS  SYS
 #                                     Reg 2  #   2      3     4     5     6     7     8     9
-  field(INP, "@${DEV} -C 1  ADS114READ  0x42, 7, 0x3c, 0x00, 0x34, 0x3a, 0x07, 0xff, 0x00, 0x18")
+  field(INP, "@${PORT} -C ${SELECT}  ADS114READ  0x42, 7, 0x3c, 0x00, 0x34, 0x3a, 0x07, 0xff, 0x00, 0x18")
 #field(SCAN, "1 second")
   field(LINR, "LINEAR")
   field(AOFF, "32768")
@@ -280,7 +280,7 @@ record(ai, "${P}${S}AIM_NADS114:IN_RD_4") {
 #                                                 1   Byp   20SPS       Excit EXC    NO   Sampl
 #                                               MUX   PGA   Rate  Ref   EXCIT EXC2  BIAS  SYS
 #                                     Reg 2  #   2      3     4     5     6     7     8     9
-  field(INP, "@${DEV} -C 1  ADS114READ  0x42, 7, 0x4c, 0x00, 0x34, 0x3a, 0x07, 0xff, 0x00, 0x18")
+  field(INP, "@${PORT} -C ${SELECT}  ADS114READ  0x42, 7, 0x4c, 0x00, 0x34, 0x3a, 0x07, 0xff, 0x00, 0x18")
 #field(SCAN, "1 second")
   field(LINR, "LINEAR")
   field(AOFF, "32768")
@@ -296,7 +296,7 @@ record(ai, "${P}${S}AIM_NADS114:IN_RD_5") {
 #                                                 1   Byp   20SPS       Excit EXC    NO   Sampl
 #                                               MUX   PGA   Rate  Ref   EXCIT EXC2  BIAS  SYS
 #                                     Reg 2  #   2      3     4     5     6     7     8     9
-  field(INP, "@${DEV} -C 1  ADS114READ  0x42, 7, 0x5c, 0x00, 0x34, 0x3a, 0x07, 0xff, 0x00, 0x18")
+  field(INP, "@${PORT} -C ${SELECT}  ADS114READ  0x42, 7, 0x5c, 0x00, 0x34, 0x3a, 0x07, 0xff, 0x00, 0x18")
 #field(SCAN, "1 second")
   field(LINR, "LINEAR")
   field(AOFF, "32768")
@@ -312,7 +312,7 @@ record(ai, "${P}${S}AIM_NADS114:IN_RD_6") {
 #                                                 1   Byp   20SPS       Excit EXC    NO   Sampl
 #                                               MUX   PGA   Rate  Ref   EXCIT EXC2  BIAS  SYS
 #                                     Reg 2  #   2      3     4     5     6     7     8     9
-  field(INP, "@${DEV} -C 1  ADS114READ  0x42, 7, 0x6c, 0x00, 0x34, 0x3a, 0x07, 0xff, 0x00, 0x18")
+  field(INP, "@${PORT} -C ${SELECT}  ADS114READ  0x42, 7, 0x6c, 0x00, 0x34, 0x3a, 0x07, 0xff, 0x00, 0x18")
 #field(SCAN, "1 second")
   field(LINR, "LINEAR")
   field(AOFF, "32768")
@@ -328,7 +328,7 @@ record(ai, "${P}${S}AIM_NADS114:IN_RD_7") {
 #                                                 1   Byp   20SPS       Excit EXC    NO   Sampl
 #                                               MUX   PGA   Rate  Ref   EXCIT EXC2  BIAS  SYS
 #                                     Reg 2  #   2      3     4     5     6     7     8     9
-  field(INP, "@${DEV} -C 1  ADS114READ  0x42, 7, 0x7c, 0x00, 0x34, 0x3a, 0x07, 0xff, 0x00, 0x18")
+  field(INP, "@${PORT} -C ${SELECT}  ADS114READ  0x42, 7, 0x7c, 0x00, 0x34, 0x3a, 0x07, 0xff, 0x00, 0x18")
 #field(SCAN, "1 second")
   field(LINR, "LINEAR")
   field(AOFF, "32768")
@@ -344,7 +344,7 @@ record(ai, "${P}${S}AIM_NADS114:IN_RD_8") {
 #                                                 1   Byp   20SPS       Excit EXC    NO   Sampl
 #                                               MUX   PGA   Rate  Ref   EXCIT EXC2  BIAS  SYS
 #                                     Reg 2  #   2      3     4     5     6     7     8     9
-  field(INP, "@${DEV} -C 1  ADS114READ  0x42, 7, 0x8c, 0x00, 0x34, 0x3a, 0x07, 0xff, 0x00, 0x18")
+  field(INP, "@${PORT} -C ${SELECT}  ADS114READ  0x42, 7, 0x8c, 0x00, 0x34, 0x3a, 0x07, 0xff, 0x00, 0x18")
 #field(SCAN, "1 second")
   field(LINR, "LINEAR")
   field(AOFF, "32768")
@@ -361,7 +361,7 @@ record(ai, "${P}${S}AIM_NADS114:IN_RD_9") {
 #                                                 9   Byp   20SPS       Excit EXC    NO   Sampl
 #                                               MUX   PGA   Rate  Ref   EXCIT EXC2  BIAS  SYS
 #                                     Reg 2  #   2      3     4     5     6     7     8     9
-  field(INP, "@${DEV} -C 1  ADS114READ  0x42, 7, 0x9c, 0x00, 0x34, 0x3a, 0x00, 0xff, 0x00, 0x18")
+  field(INP, "@${PORT} -C ${SELECT}  ADS114READ  0x42, 7, 0x9c, 0x00, 0x34, 0x3a, 0x00, 0xff, 0x00, 0x18")
 #field(SCAN, "1 second")
   field(LINR, "LINEAR")
   field(AOFF, "32768")
@@ -377,7 +377,7 @@ record(ai, "${P}${S}AIM_NADS114:IN_RD_10") {
 #                                                 9   Byp   20SPS       Excit EXC    NO   Sampl
 #                                               MUX   PGA   Rate  Ref   EXCIT EXC2  BIAS  SYS
 #                                     Reg 2  #   2      3     4     5     6     7     8     9
-  field(INP, "@${DEV} -C 1  ADS114READ  0x42, 7, 0xac, 0x00, 0x34, 0x3a, 0x00, 0xff, 0x00, 0x18")
+  field(INP, "@${PORT} -C ${SELECT}  ADS114READ  0x42, 7, 0xac, 0x00, 0x34, 0x3a, 0x00, 0xff, 0x00, 0x18")
 # field(SCAN, "1 second")
   field(LINR, "LINEAR")
   field(AOFF, "32768")
@@ -394,7 +394,7 @@ record(ai, "${P}${S}AIM_NADS114:IN_RD_11") {
 #                                                 9   Byp   20SPS       Excit EXC    NO   Sampl
 #                                               MUX   PGA   Rate  Ref   EXCIT EXC2  BIAS  SYS
 #                                     Reg 2  #   2      3     4     5     6     7     8     9
-  field(INP, "@${DEV} -C 1  ADS114READ  0x42, 7, 0xbc, 0x00, 0x34, 0x3a, 0x00, 0xff, 0x00, 0x18")
+  field(INP, "@${PORT} -C ${SELECT}  ADS114READ  0x42, 7, 0xbc, 0x00, 0x34, 0x3a, 0x00, 0xff, 0x00, 0x18")
 # field(SCAN, "1 second")
   field(LINR, "LINEAR")
   field(AOFF, "32768")
@@ -411,7 +411,7 @@ record(ai, "${P}${S}A_ATTENUATION_VALUE") {
 #                                                 9   Byp   20SPS       Excit EXC    NO   Sampl
 #                                               MUX   PGA   Rate  Ref   EXCIT EXC2  BIAS  SYS
 #                                     Reg 2  #   2      3     4     5     6     7     8     9
-  field(INP, "@${DEV} -C 1  ADS114READ  0x42, 7, 0x02, 0x00, 0x34, 0x3a, 0x07, 0xff, 0x00, 0x18")
+  field(INP, "@${PORT} -C ${SELECT}  ADS114READ  0x42, 7, 0x02, 0x00, 0x34, 0x3a, 0x07, 0xff, 0x00, 0x18")
   field(SCAN, "1 second")
   field(LINR, "LINEAR")
 #  field(AOFF, "32768")
@@ -427,7 +427,7 @@ record(ai, "${P}${S}B_ATTENUATION_VALUE") {
 #                                                 9   Byp   20SPS       Excit EXC    NO   Sampl
 #                                               MUX   PGA   Rate  Ref   EXCIT EXC2  BIAS  SYS
 #                                     Reg 2  #   2      3     4     5     6     7     8     9
-  field(INP, "@${DEV} -C 1  ADS114READ  0x42, 7, 0x13, 0x00, 0x34, 0x3a, 0x07, 0xff, 0x00, 0x18")
+  field(INP, "@${PORT} -C ${SELECT}  ADS114READ  0x42, 7, 0x13, 0x00, 0x34, 0x3a, 0x07, 0xff, 0x00, 0x18")
   field(SCAN, "1 second")
   field(LINR, "LINEAR")
 #  field(AOFF, "32768")
