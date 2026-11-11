@@ -24,12 +24,6 @@
 #include <linux/spi/spidev.h>
 #include "SPIDriver.h"
 
-/// Verbosity Debug Flag
-///
-/// Bit 1 = show 16 bit transactions
-/// Bit 2 = show 8 bit transactions
-
-extern int SPIDebug;
 
 // ---------------------------------------------------------------------------------------------------------------
 //
@@ -153,10 +147,6 @@ int openSPI(const char *device, const uint32_t mode, const uint8_t bits, const u
         return(-1);
     }
 
-	// Show my net settings
-	if(SPIDebug&1)
-		SPIdumpstat(device, fd);
-
 	return(fd);
 }
 
@@ -191,15 +181,6 @@ int doSPITransaction8(const int fd, const uint32_t len, const uint8_t *xmt, uint
 	int		status;
 	char msg[80];
 
-	// Log the message going out if in verbose mode
-	if(SPIDebug & 2)
-	{
-		printf("Writing( 8) < ");
-		for(uint8_t i=0; i<len ; i++)
-			printf("%02x, ", xmt[i]);
-		printf(" >\n");
-	}
-
 	// Do the operation
 	tr.tx_buf = (__u64 ) xmt;		// Pointer to xmit buffer
 	tr.rx_buf =  (__u64) rcv;		// pointer to receive buffer
@@ -214,15 +195,6 @@ int doSPITransaction8(const int fd, const uint32_t len, const uint8_t *xmt, uint
 	{
 		sprintf(msg, "doSPITransaction8 failed Handle=%d",fd);
 		perror(msg);
-	}
-
-	// Log the message received if in verbose mode
-	if(SPIDebug & 2)
-	{
-		printf("Reading( 8) < ");
-           for(uint8_t i=0; i<len ; i++)
-			printf("%02x, ", rcv[i]);
-        printf(" >\n");
 	}
 
 	return(status);
