@@ -66,8 +66,8 @@
 
 
 // Global variables
-int SPIDebug=0;
-epicsExportAddress(int, SPIDebug);
+uint8_t  cs_doNotDisturb;   // This chip is busy.  Don't bother it
+uint32_t verbosityMask = 0;
 
 // Heres the definition of the chain that contains all the servers that have been defined.
 static struct deviceServer {
@@ -93,8 +93,10 @@ struct privateData
   IOSCANPVT scan;           // update routine for this record
   uint8_t   tpro;           // Show debug data on this transaction
   uint8_t   chipSelect;     // ChipSelect to use
+  uint8_t   altChipSelect;  // Alternate Chip Select (specific for ADS114 right now)
   uint8_t   indexsupplied;  // There was an index included in this command
   uint16_t  idx;            // Where to access raw data in xmt/rcv
+  uint8_t   nmfr;           // Not My First Rodeo.  Handled the record before
   uint16_t  lastVal;        // Last value updated in the record
   int16_t   rval;           // Raw Value
   uint8_t dataType;         // type of data (0=words, 1=bytes, 2=special (allocate words))
@@ -294,7 +296,7 @@ void loadMyDatabaseRecords(void)
 static void scannerThread(void *parm);
 void startScannerThread()
 {
-  epicsThreadCreate("scannerThread", epicsThreadPriorityHigh, epicsThreadGetStackSize(epicsThreadStackBig), &scannerThread, 0);
+  epicsThreadCreate("scannerThread", epicsThreadPriorityLow, epicsThreadGetStackSize(epicsThreadStackBig), &scannerThread, 0);
 }
 
 /** ****************************************************************************************************************************
@@ -447,473 +449,6 @@ static long initRoutine()
  *
  * ******************************************************************************************/
 
-#ifdef NEVER
-/* ============================================================================================
- *
- * Here is the driver that outputs a value to the actual GPIO bit defined
- *
- * ============================================================================================ */
-static void GPIOWrite( void *ptr)
-{
-  struct privateData *priv = ptr;
-  do
-  {
-    // Wait till someone requests service
-    epicsThreadSuspendSelf();
-
-    if(priv->tpro == 1)
-      printf("GPIO[%d] = %d\n",priv->idx, priv->rval);
-
-    if( GPIOOutput(priv->idx, priv->rval) < 0)
-    {
-      perror(" Inside __FILE__ Doing GPIOWrite Failed");
-    }
-
-  } while(1);
-}
-
-
-/* ============================================================================================
- *
- * This driver is specific to the ADS114 A/D converter chip analog input channels.
- *
- * It will perform the following sequence of control
- * 1. Lock the SPI Channel
- * 2. Output the byte string that is defined in the record
- * 3. Output a 'START' command to start the conversion
- * 4. Check if I have DRDY valid
- * 5. If not ready, allow remainder to scan
- * 6. Once the device is ready (NOP returns a 0 status when done) output a RDATA command
- * 7. Get the result of the conversion from bytes 1 and 2 in the response (MSB first)
- * 8. Send out a 'STOP' command to stop conversion.
- * 9. Set state back to starting value (0 I'd guess)
- * 10.Return result
- *
- * ============================================================================================ */
-
-static uint8_t startCmd[] = {0x8};
-static uint8_t getDeviceStatus[] = { 0x21, 0, 0 };
-static uint8_t readCmd[] = { 0x12, 0, 0};
-static uint8_t stopCmd[] = {0xa};
-static uint8_t readDRDY[] = {0,0};
-
-static void ADS114Read_Driver(void *ptr)
-{
-  struct privateData *priv = ptr;
-  int status = -1;
-  uint8_t rcv[]={0,0,0,0,0,0,0,0,0,0};
-
-  do
-  {
-    // Wait till someone requests service
-    epicsThreadSuspendSelf();
-
-    // Wait till I can lock the resource
-    epicsMutexMustLock(priv->server->plock)
-
-
-    // Now, step through the sequence
-
-    // First, lets see if the chip is ready to accept another command
-    do
-    {
-      // Log the message going out if in verbose mode
-      if(priv->tpro == 1)
-      {
-        printf("\nADS114Read_Driver:\nWriting(8) 0x%1x> ",priv->chipSelect);
-        for(uint32_t i=0; i<sizeof(getDeviceStatus); i++)
-          printf("%02x ", getDeviceStatus[i]);
-        printf("\n");
-      }
-      // Select the chip and do the transaction
-      chipSelect(priv->chipSelect);
-
-      status = doSPITransaction8(priv->server->handle, sizeof(getDeviceStatus), getDeviceStatus, rcv );
-      if(status < 0)
-      {
-        printf(" doSPITransaction8 to %s[%d] failed (1)\n",priv->pv->name, priv->server->handle);
-        exit(1);
-      }
-      if(rcv[2] & 0x40)
-        printf("Device not ready, Status=%02x ",rcv[2]);
-    }
-    while(rcv[2] & 0x40);
-
-    // Output the initial setup command and start the conversion
-
-    // Log the message going out if in verbose mode
-    if(priv->tpro == 1)
-    {
-      printf("\nADS114Read_Driver:\nWriting(8) 0x%1x> ",priv->chipSelect);
-      for(uint32_t i=0; i<priv->len; i++)
-        printf("%02x ", priv->xmt.bytes[i]);
-      printf("\n");
-    }
-    // Select the chip and do the transaction
-    chipSelect(priv->chipSelect);
-
-    // Note that the command string should not have a START command appended to it.
-    // This output is just to set the input path, mux, PGA, ...
-    status = doSPITransaction8(priv->server->handle, priv->len*sizeof(uint8_t), priv->xmt.bytes, priv->rcv.bytes );
-    if(status < 0)
-    {
-        printf(" doSPITransaction8 to %s[%d] failed (2.1)\n",priv->pv->name, priv->server->handle);
-        exit(1);
-    }
-
-    // Now, send the start command
-    status = doSPITransaction8(priv->server->handle, sizeof(startCmd), startCmd, priv->rcv.bytes );
-    if(status < 0)
-    {
-        printf(" doSPITransaction8 to %s[%d] failed (2.2)\n",priv->pv->name, priv->server->handle);
-        exit(1);
-    }
-
-    if(priv->tpro == 1)
-      printf("\nADS114Read_Driver: Checking for DRDY: ");
-
-    // Wait till the conversion is complete
-    // check the DRDY flag
-    do
-    {
-      chipSelect(0);
-
-      status = doSPITransaction8(priv->server->handle, sizeof(readDRDY), readDRDY, rcv);
-      if(status < 0)
-      {
-        printf(" doSPITransaction8 to %s[%d] failed (3)\n",priv->pv->name, priv->server->handle);
-        exit(1);
-      }
-
-      chipSelect(15);
-      // If it's not clear, I'm not ready yet
-      if(rcv[0])
-      {
-        // Still busy, break out of the sequence
-        if(priv->tpro == 1)
-          printf(". ");
-      }
-    }
-    while(rcv[0]);
-
-    // Once the conversion is complete, read the data, get the result, and then stop the conversion
-    if(priv->tpro == 1)
-    {
-      printf("\nADS114Read_Driver:\nPerforming RDATA(8) 0x%1x< ",priv->chipSelect);
-      for(uint8_t i=0; i<sizeof(readCmd) ; i++)
-        printf("%02x ", readCmd[i]);
-      printf(">\n");
-    }
-    chipSelect(priv->chipSelect);
-    status = doSPITransaction8(priv->server->handle, sizeof(readCmd), readCmd, priv->rcv.bytes );
-    if(status < 0)
-    {
-        printf(" doSPITransaction8 to %s[%d] failed (4)\n",priv->pv->name, priv->server->handle);
-        exit(1);
-    }
-
-    if(priv->tpro == 1)
-    {
-      printf(" =< " );
-      for(uint8_t i=0; i<sizeof(readCmd) ; i++)
-        printf("%02x ", priv->rcv.bytes[i]);
-      printf(" >\n");
-    }
-
-    priv->rval=(priv->rcv.bytes[1] << 8 ) | priv->rcv.bytes[2];
-    if(priv->tpro == 1)
-      printf("Returning value of %d\n", priv->rval);
-
-    // Now stop the converter
-    chipSelect(priv->chipSelect);
-    status = doSPITransaction8(priv->server->handle, sizeof(stopCmd), stopCmd, priv->rcv.bytes );
-    if(status < 0)
-    {
-        printf(" doSPITransaction8 to %s[%d] failed (5)\n",priv->pv->name, priv->server->handle);
-        exit(1);
-    }
-
-    // Now that I'm done, unlock the channel so someone else can use it.
-    chipSelect(15);
-    // Release the resource
-    epicsMutexUnlock(priv->server->plock);
-
-    if(priv->tpro == 1)
-      printf("Unlocked\n");
-
-    // Show I'm done
-    callbackRequest(&priv->cb);
-
-  } while(TRUE);
-}
-
-
-/* ============================================================================================
- *
- * Here is the driver that outputs a string of bytes (and recieves a response simultaneously),
- * and then returns a selected byte from the response.
- *
- * ============================================================================================ */
-
-static void Read8_Driver(void *ptr)
-{
-  struct privateData *priv = ptr;
-  int status;
-
-  do
-  {
-    // Sleep till requested to run
-    epicsThreadSuspendSelf();
-
-    // lock the resource
-    epicsMutexMustLock(priv->server->plock);
-
-    // Log the message going out if in verbose mode
-    if(priv->tpro == 1)
-    {
-      printf("\nRead8_Driver\nWriting(8) 0x%1x < ",priv->chipSelect);
-      for(uint32_t i=0; i<priv->len; i++)
-        printf("%02x ", priv->xmt.bytes[i]);
-      printf(" >\n");
-    }
-
-    // Select the chip and do the transaction
-    chipSelect(priv->chipSelect);
-
-    status = doSPITransaction8(priv->server->handle, priv->len*sizeof(uint8_t), priv->xmt.bytes, priv->rcv.bytes );
-    if(status < 0)
-    {
-        printf(" doSPITransaction8 to %s[%d] failed (6)\n",priv->pv->name, priv->server->handle);
-        exit(1);
-    }
-
-    // Log the message I got back if in verbose mode
-    if(priv->tpro == 1)
-    {
-      printf("Reading(8) 0x%1x < ",priv->chipSelect);
-      for(uint8_t i=0; i<priv->len ; i++)
-        printf("%02x ", priv->rcv.bytes[i]);
-      printf(" >\n");
-    }
-
-    // Get data to return
-    if(priv->tpro == 1)
-      printf("Returning value of %x\n",priv->rcv.bytes[priv->idx]);
-    priv->rval = priv->rcv.bytes[priv->idx];
-
-    if(priv->tpro == 1)
-      printf("Unselecting chip\n");
-    chipSelect(15);
-
-    // Release the resource
-    epicsMutexUnlock(priv->server->plock);
-
-    // Show I'm done
-    callbackRequest(&priv->cb);
-  }
-  while(TRUE);
-}
-
-/* ============================================================================================
- *
- * This driver outputs a string of bytes (and recieves a response simultaneously),
- * and then returns a selected WORD from the response.
- *
- * ============================================================================================ */
-
-static void Read8_16_Driver(void *ptr)
-{
-  struct privateData *priv = ptr;
-  int status;
-
-  do
-  {
-    // Wait till service requested
-    epicsThreadSuspendSelf();
-    // get the resource
-    epicsMutexMustLock(priv->server->plock);
-
-    // Log the message going out if in verbose mode
-    if(priv->tpro == 1)
-    {
-      printf("\nRead8.16 Driver\nWriting(8.16) 0x%1x < ",priv->chipSelect);
-      for(uint32_t i=0; i<priv->len; i++)
-        printf("%02x ", priv->xmt.bytes[i]);
-      printf(" >\n");
-    }
-
-    // Select the chip and do the transaction
-    chipSelect(priv->chipSelect);
-
-    // Output the bytes, but receive the words
-    status = doSPITransaction8(priv->server->handle, priv->len*sizeof(uint8_t), priv->xmt.bytes, priv->rcv.bytes );
-    if(status < 0)
-    {
-        printf(" doSPITransaction8.16 to %s[%d] failed (1)\n",priv->pv->name, priv->server->handle);
-        exit(1);
-    }
-
-    // Log the message I got back if in verbose mode
-    if(priv->tpro == 1)
-    {
-      printf("Reading(8.16) 0x%1x < ",priv->chipSelect);
-      for(uint8_t i=0; i<priv->len ; i++)
-        printf("%02x ", priv->rcv.bytes[i]);
-      printf(" >\n");
-    }
-
-    // If supposed to put data back, get it
-    if(priv->indexsupplied)
-    {
-      priv->rval = priv->rcv.bytes[priv->idx] << 8 | priv->rcv.bytes[priv->idx+1];
-      if(priv->tpro == 1)
-        printf("Returning value of [%d] %x\n",priv->idx, priv->rval);
-    }
-
-    if(priv->tpro == 1)
-      printf("Unselecting chip\n");
-    chipSelect(15);
-
-    // Release the resource
-    epicsMutexUnlock(priv->server->plock);
-
-    // Show I'm done
-    callbackRequest(&priv->cb);
-  }
-  while(TRUE);
-}
-
-/* ============================================================================================
- *
- * OK, in the case of the AMC7823, reading the analog channels also returns the channel ID in the most
- * significant 3 bits of the response.  Good for figuring out how to get it working, but causes all
- * sorts of problems trying to mask off 12 bits in EPICS.
- *
- * This routine first outputs a string of 16 bit words (and recieves a response simultaneously),
- * and then gets the word you request and returns it, after masking it to 12 bits.
- *
- * ============================================================================================ */
-
-static void Read12_Driver(void *ptr)
-{
-  int status;
-
-  struct privateData *priv = ptr;
-  do
-  {
-    // Wait till service requested
-    epicsThreadSuspendSelf();
-    // Release the resource
-    epicsMutexMustLock(priv->server->plock);
-    // Select the chip and do the transaction
-    chipSelect(priv->chipSelect);
-
-    // Log the message going out if in verbose mode
-    if(priv->tpro == 1)
-    {
-      printf("Read_12 Driver\nWriting(12) > ");
-      for(uint32_t i=0; i<priv->len; i++)
-        printf("%04x ", priv->xmt.words[i]);
-      printf("\n");
-    }
-
-    status = doSPITransaction16(priv->server->handle, priv->len*sizeof(uint16_t), priv->xmt.words, priv->rcv.words );
-    if(status < 0)
-    {
-        printf(" doSPITransaction12 to %s[%d] failed (1)\n",priv->pv->name, priv->server->handle);
-        exit(1);
-    }
-
-    // Log the message going out if in verbose mode
-    if(priv->tpro == 1)
-    {
-      printf("Reading(12) < ");
-      for(uint8_t i=0; i<priv->len ; i++)
-        printf("%04x ", priv->rcv.words[i]);
-      printf("\n");
-    }
-
-    // If supposed to put data back, get it
-    if(priv->idx)
-      priv->rval = priv->rcv.words[priv->idx] & 0xfff;
-
-    chipSelect(15);
-
-    // Release the resource
-    epicsMutexUnlock(priv->server->plock);
-
-    // Show I'm done
-    callbackRequest(&priv->cb);
-  }
-  while(TRUE);
-}
-
-
-/* ============================================================================================
- *
- * Next routine.  This driver outputs a string of 16 bit words (and recieves a response simultaneously),
- * and then returns a selected word from the response.
- *
- * ============================================================================================ */
-
-static void Read16_Driver(void *ptr)
-{
-  int status;
-  struct privateData *priv = ptr;
-  do
-  {
-    // Wait till requested
-    epicsThreadSuspendSelf();
-    // Grab the resource
-    epicsMutexMustLock(priv->server->plock);
-
-    // Select the chip and do the transaction
-    chipSelect(priv->chipSelect);
-
-    // Log the message going out if in verbose mode
-    if(priv->tpro == 1)
-    {
-      printf("Read16 Driver\nWriting(16) > ");
-      for(uint32_t i=0; i<priv->len; i++)
-        printf("%04x ", priv->xmt.words[i]);
-      printf("\n");
-    }
-
-    status = doSPITransaction16(priv->server->handle, priv->len*sizeof(uint16_t), priv->xmt.words, priv->rcv.words );
-    if(status < 0)
-    {
-        printf(" doSPITransaction16 to %s[%d] failed (1)\n",priv->pv->name, priv->server->handle);
-        exit(1);
-    }
-
-    // Log the message going out if in verbose mode
-    if(priv->tpro == 1)
-    {
-      printf("Reading(16) < ");
-      for(uint8_t i=0; i<priv->len ; i++)
-        printf("%04x ", priv->rcv.words[i]);
-      printf("\n");
-    }
-
-    // If supposed to put data back, get it
-    if(priv->indexsupplied)
-      priv->rval = priv->rcv.words[priv->idx];
-
-
-    chipSelect(15);
-    // Release the resource
-    epicsMutexUnlock(priv->server->plock);
-
-    // Show I'm done
-    callbackRequest(&priv->cb);
-  }
-  while(TRUE);
-}
-
-
-
-#endif
-
 // List of defined device Names
 typedef struct deviceDriverEntry
 {
@@ -936,6 +471,10 @@ static deviceDriverEntry deviceDrivers[] =
   {NULL, NULL}
 };
 
+static uint8_t ADS114ReadStatus[] = {0x21, 0, 0};
+static uint8_t ADS114readCmd[] = { 0x12, 0, 0};
+static uint8_t ADS114stopCmd[] = {0xa};
+static uint8_t ADS114readDRDY[] = {0,0};
 
 /** **********************************************************************************
  * \brief IO Scanner Thread
@@ -946,103 +485,30 @@ static deviceDriverEntry deviceDrivers[] =
  *
  * Now, Writes are handled before reads as they may effect the reads
  * */
-static void scannerThread(void *parm)
+void scannerThread(void *parm)
 {
   ELLNODE *chain;
+  ELLNODE *ads114Temp = ellFirst(&ads114Chain);
+  uint8_t ads114Flag = 0;
+  uint8_t counter = 0;
+  struct timespec sleeper = {0, 100000000};
 
   do
   {
-//#define DEBUG
-#ifdef DEBUG
-    int i = 0;
-    // First, lets just show how many records I have on each list
+    nanosleep(&sleeper, NULL);
 
+    if(verbosityMask & 1<<31)
+      printf("Start of loop\n");
 
-
-    if( (i=ellCount(&gpioWriteChain)) )
-    {
-        printf("GPIOWrite Chain has %d entries\n",i);
-        for(chain=ellFirst(&gpioWriteChain); chain != 0; chain=ellNext(chain) )
-        {
-          struct privateData *ptr = (struct privateData *) chain;
-          printf("Record for %s\n", ptr->pv->name);
-        }
-    }
-    if((i=ellCount(&read8Chain)) )
-    {
-        printf("read8 Chain has %d entries\n",i);
-        for(chain=ellFirst(&read8Chain); chain != 0; chain=ellNext(chain) )
-        {
-          struct privateData *ptr = (struct privateData *) chain;
-          printf("Record for %s\n", ptr->pv->name);
-        }
-    }
-    if((i=ellCount(&read12Chain)) )
-    {
-        printf("read12 Chain has %d entries\n",i);
-        for(chain=ellFirst(&read12Chain); chain != 0; chain=ellNext(chain) )
-        {
-          struct privateData *ptr = (struct privateData *) chain;
-          printf("Record for %s\n", ptr->pv->name);
-        }
-    }
-    if((i=ellCount(&read816Chain)) )
-    {
-        printf("read8.16 Chain has %d entries\n",i);
-        for(chain=ellFirst(&read816Chain); chain != 0; chain=ellNext(chain) )
-        {
-          struct privateData *ptr = (struct privateData *) chain;
-          printf("Record for %s\n", ptr->pv->name);
-        }
-    }
-    if((i=ellCount(&read16Chain)) )
-    {
-        printf("read16 Chain has %d entries\n",i);
-        for(chain=ellFirst(&read16Chain); chain != 0; chain=ellNext(chain) )
-        {
-          struct privateData *ptr = (struct privateData *) chain;
-          printf("Record for %s\n", ptr->pv->name);
-        }
-    }
-    if((i=ellCount(&ads114Chain)) )
-    {
-        printf("ads114 Chain has %d entries\n",i);
-        for(chain=ellFirst(&ads114Chain); chain != 0; chain=ellNext(chain) )
-        {
-          struct privateData *ptr = (struct privateData *) chain;
-          printf("Record for %s\n", ptr->pv->name);
-        }
-    }
-    if((i=ellCount(&write8Chain)) )
-    {
-        printf("write8 Chain has %d entries\n",i);
-        for(chain=ellFirst(&write8Chain); chain != 0; chain=ellNext(chain) )
-        {
-          struct privateData *ptr = (struct privateData *) chain;
-          printf("Record for %s\n", ptr->pv->name);
-        }
-    }
-    if((i=ellCount(&write16Chain)) )
-    {
-        printf("write16 Chain has %d entries\n",i);
-        for(chain=ellFirst(&write16Chain); chain != 0; chain=ellNext(chain) )
-        {
-          struct privateData *ptr = (struct privateData *) chain;
-          printf("Record for %s\n", ptr->pv->name);
-        }
-    }
-    sleep(1);
-#else
     // OK, I'm going to put all the routines inline here, and each chain will be executed completely (except for ADS114)
     // before moving to the next.  All outputs are up first, as they might affect the read operations later.
 
     /** ============================================================================================
-    *
-    * GPIO Output Chain
-    * Currently handles output requests.
-    *
-    * ============================================================================================ */
-
+     *
+     * GPIO Output Chain
+     * Currently handles output requests.
+     *
+     * ============================================================================================ */
     for(chain=ellFirst(&gpioWriteChain); chain!=NULL; chain=ellNext(chain))
     {
       struct privateData *priv = (struct privateData *)chain;
@@ -1050,7 +516,7 @@ static void scannerThread(void *parm)
       if(priv->act != 0)
       {
         if(priv->tpro)
-          printf("Working on active GPIO record, \"%s\" value=%01x\n",priv->pv->name, priv->rval);
+          printf("Working on active GPIOWrite record, \"%s\" value=%01x\n",priv->pv->name, priv->rval);
 
         if( GPIOOutput(priv->idx, priv->rval) < 0)
         {
@@ -1061,13 +527,12 @@ static void scannerThread(void *parm)
     }
 
     /* ============================================================================================
-    *
-    * Write8 chain
-    * Writes are handled as callbacks, so that data can be returned to the caller.  They do not happen
-    * based on Software Interrupts, so only callbacks are needed.
-    *
-    * ============================================================================================ */
-
+     *
+     * Write8 chain
+     * Writes are handled as callbacks, so that data can be returned to the caller.  They do not happen
+     * based on Software Interrupts, so only callbacks are needed.
+     *
+     * ============================================================================================ */
     for(chain=ellFirst(&write8Chain); chain != 0; chain=ellNext(chain))
     {
       struct privateData  *priv = (struct privateData *)chain;
@@ -1096,14 +561,13 @@ static void scannerThread(void *parm)
     }
 
     /* ============================================================================================
-    *
-    * Write8.16 chain
-    * This  routine handles the special occurance where I'm sending an 8-bit command, followed by 16-bit data (i.e. DAC8562).
-    * Writes are handled as callbacks, so that data can be returned to the caller.  They do not happen
-    * based on Software Interrupts, so only callbacks are needed.
-    *
-    * ============================================================================================ */
-
+     *
+     * Write8.16 chain
+     * This  routine handles the special occurance where I'm sending an 8-bit command, followed by 16-bit data (i.e. DAC8562).
+     * Writes are handled as callbacks, so that data can be returned to the caller.  They do not happen
+     * based on Software Interrupts, so only callbacks are needed.
+     *
+     * ============================================================================================ */
     for(chain=ellFirst(&write816Chain); chain != 0; chain=ellNext(chain))
     {
       struct privateData  *priv = (struct privateData *)chain;
@@ -1148,7 +612,7 @@ static void scannerThread(void *parm)
 
 
         // Get data to return
-        priv->rval = priv->rcv.bytes[priv->idx] | (priv->rcv.bytes[priv->idx+1] << 8);
+        priv->rval = priv->rcv.bytes[priv->idx+2] | (priv->rcv.bytes[priv->idx+1] << 8);
 
         chipSelect(15);
 
@@ -1159,12 +623,12 @@ static void scannerThread(void *parm)
     }
 
     /* ============================================================================================
-    *
-    * Write16 chain
-    * Writes are handled as callbacks, so that data can be returned to the caller.  They do not happen
-    * based on Software Interrupts, so only callbacks are needed.
-    *
-    * ============================================================================================ */
+     *
+     * Write16 chain
+     * Writes are handled as callbacks, so that data can be returned to the caller.  They do not happen
+     * based on Software Interrupts, so only callbacks are needed.
+     *
+     * ============================================================================================ */
     for(chain=ellFirst(&write16Chain); chain != 0; chain=ellNext(chain))
     {
       struct privateData  *priv = (struct privateData *)chain;
@@ -1197,150 +661,461 @@ static void scannerThread(void *parm)
     // All doue with the output routines, next lets do the routine to read8
 
     /* ============================================================================================
-    *
-    * Read8 handler
-    * Here is the driver that outputs a string of bytes (and recieves a response simultaneously),
-    * and then returns a selected byte from the response.
-    *
-    * These are handled as interrupt inputs, so processing is pretty quick.  The driver will repeatedly
-    * go through the chain at full speed, and if the value returned changes, it will update the PV.
-    *
-    * ============================================================================================ */
-
+     *
+     * Read8 handler
+     * Here is the driver that outputs a string of bytes (and recieves a response simultaneously),
+     * and then returns a selected byte from the response.
+     *
+     * These are handled as interrupt inputs, so processing is pretty quick.  The driver will repeatedly
+     * go through the chain at full speed, and if the value returned changes, it will update the PV.
+     *
+     * ============================================================================================ */
     for(chain=ellFirst(&read8Chain); chain != 0; chain=ellNext(chain))
     {
       struct privateData  *priv = (struct privateData *)chain;
       int status;
 
-      if(priv->act!=0)
+      if(priv->chipSelect != cs_doNotDisturb)
       {
-        // Log the message going out if in verbose mode
-        if(priv->pv->tpro != 0)
+        if(priv->act!=0)
         {
-          printf("\nRead8_Driver\nWriting(8)[0x%1x] < ",priv->chipSelect);
-          for(uint32_t i=0; i<priv->len; i++)
-            printf("%02x ", priv->xmt.bytes[i]);
-          printf(" >\n");
+          // Log the message going out if in verbose mode
+          if(priv->pv->tpro != 0)
+          {
+            printf("\nRead8_Driver\nWriting(8)[0x%1x] < ",priv->chipSelect);
+            for(uint32_t i=0; i<priv->len; i++)
+              printf("%02x ", priv->xmt.bytes[i]);
+            printf(" >\n");
+          }
+
+          // Select the chip and do the transaction
+          chipSelect(priv->chipSelect);
+
+          status = doSPITransaction8(priv->server->handle, priv->len*sizeof(uint8_t), priv->xmt.bytes, priv->rcv.bytes );
+          if(status < 0)
+          {
+            printf(" doSPITransaction8 to %s[%d] failed (6)\n",priv->pv->name, priv->server->handle);
+            exit(1);
+          }
+
+          // output idle chip select
+          chipSelect(15);
+
+          // Log the message I got back if in verbose mode
+          if(priv->pv->tpro != 0)
+          {
+            printf("Reading(8)[0x%1x] < ",priv->chipSelect);
+            for(uint8_t i=0; i<priv->len ; i++)
+              printf("%02x ", priv->rcv.bytes[i]);
+            printf(" >\n");
+          }
+
+          // Get data to return
+          priv->rval = priv->rcv.bytes[priv->idx];
+
+          // If the value changed, notify someone.
+          if((priv->rval != priv->lastVal) || !priv->nmfr)
+          {
+
+            if((verbosityMask & 1<<0) & ellCount(&read8Chain))
+              printf("Returning value of %x\n",priv->rcv.bytes[priv->idx]);
+
+            // Show I'm done
+            scanIoImmediate(priv->scan, priorityHigh);
+            scanIoImmediate(priv->scan, priorityMedium);
+            scanIoImmediate(priv->scan, priorityLow);
+            priv->pv->tpro = 0;
+
+            // update the last value that I sent
+            priv->lastVal = priv->rval;
+            priv->nmfr = 1;
+          }
+          //        priv->act=0;
         }
-
-        // Select the chip and do the transaction
-        chipSelect(priv->chipSelect);
-
-        status = doSPITransaction8(priv->server->handle, priv->len*sizeof(uint8_t), priv->xmt.bytes, priv->rcv.bytes );
-        if(status < 0)
-        {
-          printf(" doSPITransaction8 to %s[%d] failed (6)\n",priv->pv->name, priv->server->handle);
-          exit(1);
-        }
-
-        // output idle chip select
-        chipSelect(15);
-
-        // Log the message I got back if in verbose mode
-        if(priv->pv->tpro != 0)
-        {
-          printf("Reading(8)[0x%1x] < ",priv->chipSelect);
-          for(uint8_t i=0; i<priv->len ; i++)
-            printf("%02x ", priv->rcv.bytes[i]);
-          printf(" >\n");
-        }
-
-        // Get data to return
-        priv->rval = priv->rcv.bytes[priv->idx];
-
-        // If the value changed, notify someone.
-        if(priv->rval != priv->lastVal)
-        {
-          if(priv->pv->tpro == 1)
-            printf("Returning value of %x\n",priv->rcv.bytes[priv->idx]);
-
-          // Show I'm done
-          scanIoImmediate(priv->scan, priorityHigh);
-          scanIoImmediate(priv->scan, priorityMedium);
-          scanIoImmediate(priv->scan, priorityLow);
-          priv->pv->tpro = 0;
-
-          // update the last value that I sent
-          priv->lastVal = priv->rval;
-        }
-//        priv->act=0;
       }
     }
 
     /* ============================================================================================
-    * Read16
-    * Here is the driver that outputs a string of words (and recieves a response simultaneously),
-    * and then returns a selected word from the response.
-    *
-    * Again,
-    * These are handled as interrupt inputs, so processing is pretty quick.  The driver will repeatedly
-    * go through the chain at full speed, and if the value returned changes, it will update the PV.
-    *
-    * ============================================================================================ */
+     *
+     * OK, in the case of the AMC7823, reading the analog channels also returns the channel ID in the most
+     * significant 3 bits of the response.  Good for figuring out how to get it working, but causes all
+     * sorts of problems trying to mask off 12 bits in EPICS.
+     *
+     * This routine first outputs a string of 16 bit words (and recieves a response simultaneously),
+     * and then gets the word you request and returns it, after masking it to 12 bits.
+     *
+     * ============================================================================================ */
 
+    for(chain=ellFirst(&read12Chain); chain != 0; chain=ellNext(chain))
+    {
+      struct privateData  *priv = (struct privateData *)chain;
+      int status;
+
+      if(priv->chipSelect != cs_doNotDisturb)
+      {
+        if(priv->act!=0)
+        {
+          // Log the message going out if in verbose mode
+          if(priv->tpro != 0)
+          {
+            printf("\nRead12_Driver\nWriting(12)[0x%1x] < ",priv->chipSelect);
+            for(uint32_t i=0; i<priv->len; i++)
+              printf("%04x ", priv->xmt.words[i]);
+            printf(" >\n");
+          }
+
+          // Select the chip and do the transaction
+          chipSelect(priv->chipSelect);
+
+          status = doSPITransaction16(priv->server->handle, priv->len*sizeof(uint16_t), priv->xmt.words, priv->rcv.words );
+          if(status < 0)
+          {
+            printf(" doSPITransaction12 to %s[%d] failed (6)\n",priv->pv->name, priv->server->handle);
+            exit(1);
+          }
+
+          // output idle chip select
+          chipSelect(15);
+
+          // Log the message I got back if in verbose mode
+          if(priv->tpro != 0)
+          {
+            printf("Reading(12)[0x%1x] < ",priv->chipSelect);
+            for(uint8_t i=0; i<priv->len ; i++)
+              printf("%04x ", priv->rcv.words[i]);
+            printf(" >\n");
+          }
+
+          // Get data to return
+          priv->rval = priv->rcv.words[priv->idx] & 0xfff;
+
+          // If the value has changed, notify someone.
+          if((priv->rval != priv->lastVal) || !priv->nmfr)
+          {
+
+            if((verbosityMask & 1<<1) && ellCount(&read12Chain))
+              printf("Returning value of %x\n",priv->rcv.words[priv->idx]);
+
+            // Show I'm done
+            scanIoImmediate(priv->scan, priorityHigh);
+            scanIoImmediate(priv->scan, priorityMedium);
+            scanIoImmediate(priv->scan, priorityLow);
+            priv->pv->tpro = 0;
+
+            // Update the last value that I sent
+            priv->lastVal = priv->rval;
+            priv->nmfr = 1;
+          }
+          //        priv->act=0;
+        }
+      }
+    }
+
+
+    /* ============================================================================================
+     *
+     * This driver outputs a string of bytes (and recieves a response simultaneously),
+     * and then returns a selected WORD from the response.
+     *
+     * ============================================================================================ */
+    for(chain=ellFirst(&read816Chain); chain != 0; chain=ellNext(chain))
+    {
+      struct privateData  *priv = (struct privateData *)chain;
+      int status;
+
+      if(priv->chipSelect != cs_doNotDisturb)
+      {
+        if(priv->act != 0)
+        {
+          // Log the message going out if in verbose mode
+          if(priv->tpro == 1)
+          {
+            printf("\nRead8.16 Driver\nWriting(8.16) 0x%1x < ",priv->chipSelect);
+            for(uint32_t i=0; i<priv->len; i++)
+              printf("%02x ", priv->xmt.bytes[i]);
+            printf(" >\n");
+          }
+
+          // Select the chip and do the transaction
+          chipSelect(priv->chipSelect);
+
+          // Output the bytes, but receive the words
+          status = doSPITransaction8(priv->server->handle, priv->len*sizeof(uint8_t), priv->xmt.bytes, priv->rcv.bytes );
+          if(status < 0)
+          {
+            printf(" doSPITransaction8.16 to %s[%d] failed (1)\n",priv->pv->name, priv->server->handle);
+            exit(1);
+          }
+
+          // Log the message I got back if in verbose mode
+          if(priv->tpro == 1)
+          {
+            printf("Reading(8.16) 0x%1x < ",priv->chipSelect);
+            for(uint8_t i=0; i<priv->len ; i++)
+              printf("%02x ", priv->rcv.bytes[i]);
+            printf(" >\n");
+          }
+
+          // If supposed to put data back, get it
+          if(priv->indexsupplied)
+          {
+            priv->rval = priv->rcv.bytes[priv->idx] << 8 | priv->rcv.bytes[priv->idx+1];
+            if(priv->tpro == 1)
+              printf("Returning value of [%d] %x\n",priv->idx, priv->rval);
+          }
+
+          // If the value has changed, notify someone.
+          if((priv->rval != priv->lastVal) || !priv->nmfr)
+          {
+            if((verbosityMask & 1<<2) && ellCount(&read816Chain))
+              printf("Returning value of %x\n",priv->rcv.words[priv->idx]);
+
+            // Show I'm done
+            scanIoImmediate(priv->scan, priorityHigh);
+            scanIoImmediate(priv->scan, priorityMedium);
+            scanIoImmediate(priv->scan, priorityLow);
+            priv->pv->tpro = 0;
+            priv->nmfr = 1;
+
+            // Update the last value that I sent
+            priv->lastVal = priv->rval;
+          }
+          //        priv->act=0;
+        }
+      }
+    }
+
+    /* ============================================================================================
+     * Read16
+     * Here is the driver that outputs a string of words (and recieves a response simultaneously),
+     * and then returns a selected word from the response.
+     *
+     * Again,
+     * These are handled as interrupt inputs, so processing is pretty quick.  The driver will repeatedly
+     * go through the chain at full speed, and if the value returned changes, it will update the PV.
+     *
+     * ============================================================================================ */
     for(chain=ellFirst(&read16Chain); chain != 0; chain=ellNext(chain))
     {
       struct privateData  *priv = (struct privateData *)chain;
       int status;
 
-      if(priv->act!=0)
+      if(priv->chipSelect != cs_doNotDisturb)
       {
-        // Log the message going out if in verbose mode
-        if(priv->tpro != 0)
+        if(priv->act!=0)
         {
-          printf("\nRead16_Driver\nWriting(16)[0x%1x] < ",priv->chipSelect);
-          for(uint32_t i=0; i<priv->len; i++)
-            printf("%04x ", priv->xmt.words[i]);
-          printf(" >\n");
+          // Log the message going out if in verbose mode
+          if(priv->tpro != 0)
+          {
+            printf("\nRead16_Driver\nWriting(16)[0x%1x] < ",priv->chipSelect);
+            for(uint32_t i=0; i<priv->len; i++)
+              printf("%04x ", priv->xmt.words[i]);
+            printf(" >\n");
+          }
+
+          // Select the chip and do the transaction
+          chipSelect(priv->chipSelect);
+
+          status = doSPITransaction16(priv->server->handle, priv->len*sizeof(uint16_t), priv->xmt.words, priv->rcv.words );
+          if(status < 0)
+          {
+            printf(" doSPITransaction16 to %s[%d] failed (6)\n",priv->pv->name, priv->server->handle);
+            exit(1);
+          }
+
+          // output idle chip select
+          chipSelect(15);
+
+          // Log the message I got back if in verbose mode
+          if(priv->tpro != 0)
+          {
+            printf("Reading(16)[0x%1x] < ",priv->chipSelect);
+            for(uint8_t i=0; i<priv->len ; i++)
+              printf("%04x ", priv->rcv.words[i]);
+            printf(" >\n");
+          }
+
+          // Get data to return
+          priv->rval = priv->rcv.words[priv->idx];
+
+          // If the value has changed, notify someone.
+          if((priv->rval != priv->lastVal) || !priv->nmfr)
+          {
+
+            if((verbosityMask & 1<<3) && ellCount(&read16Chain))
+              printf("Returning value of %x\n",priv->rcv.words[priv->idx]);
+
+            // Show I'm done
+            scanIoImmediate(priv->scan, priorityHigh);
+            scanIoImmediate(priv->scan, priorityMedium);
+            scanIoImmediate(priv->scan, priorityLow);
+            priv->pv->tpro = 0;
+            priv->nmfr = 1;
+
+            // Update the last value that I sent
+            priv->lastVal = priv->rval;
+            priv->nmfr = 1;
+          }
+          //        priv->act=0;
         }
-
-        // Select the chip and do the transaction
-        chipSelect(priv->chipSelect);
-
-        status = doSPITransaction16(priv->server->handle, priv->len*sizeof(uint16_t), priv->xmt.words, priv->rcv.words );
-        if(status < 0)
-        {
-          printf(" doSPITransaction16 to %s[%d] failed (6)\n",priv->pv->name, priv->server->handle);
-          exit(1);
-        }
-
-        // output idle chip select
-        chipSelect(15);
-
-        // Log the message I got back if in verbose mode
-        if(priv->tpro != 0)
-        {
-          printf("Reading(16)[0x%1x] < ",priv->chipSelect);
-          for(uint8_t i=0; i<priv->len ; i++)
-            printf("%04x ", priv->rcv.words[i]);
-          printf(" >\n");
-        }
-
-        // Get data to return
-        priv->rval = priv->rcv.words[priv->idx];
-        if(priv->tpro == 1)
-          printf("Returning value of %x\n",priv->rcv.words[priv->idx]);
-
-        // If the value has changed, notify someone.
-        if(priv->rval != priv->lastVal)
-        {
-          // Show I'm done
-          scanIoImmediate(priv->scan, priorityHigh);
-          scanIoImmediate(priv->scan, priorityMedium);
-          scanIoImmediate(priv->scan, priorityLow);
-          priv->pv->tpro = 0;
-
-          // Update the last value that I sent
-          priv->lastVal = priv->rval;
-        }
-//        priv->act=0;
       }
     }
 
 
 
-#endif
-  } while(1);
+    /* ============================================================================================
+     *
+     * This driver is specific to the ADS114 A/D converter chip analog input channels,
+     * This chip is somewhat slow, so of course, its more complicated.
+     *
+     * It will perform the following sequence of control
+     * 1. If the ADS114Temp pointer is NULL, grab the first record of the ADS114 list and store it.
+     * 2. If not null (meaning a record is in process), skip to step 6
+     * 3. Output the byte string that is defined in the record I'm pointing to
+     * 4. Output a 'START' command to start the conversion
+     * 5. Skip to step 12 at the moment
+     * 6. Check if I have DRDY valid. If not, skip to step 12 at the moment
+     * 7. Once the device is ready (NOP returns a 0 status when done) output a RDATA command
+     * 8. Get the result of the conversion from bytes 1 and 2 in the response (MSB first)
+     * 9. Send out a 'STOP' command to stop conversion.
+     * 10. Store the result
+     * 11. Move to the next record, and loop back to step 1.
+     * 12. continue on
+     *
+     * ============================================================================================ */
+
+    // of course, this is different from the others.
+    // Make sure there's something to do
+    if(ellCount(&ads114Chain))
+    {
+      struct privateData  *priv = (struct privateData *)ads114Temp;
+
+      uint8_t rcv[]={0,0,0,0,0,0,0,0,0,0};
+
+      if((verbosityMask & 1<<4) && ellCount(&ads114Chain))
+        printf("Working on  %s\n",priv->pv->name);
+
+      // See if this record is disabled
+      if(priv->pv->disa != priv->pv->disv)
+      {
+        if((verbosityMask & 1<<4) && ellCount(&ads114Chain))
+          printf("Initial Entry on  %s\n",priv->pv->name);
+
+        // Tell everyone else to leave this chip alone for the moment
+        cs_doNotDisturb = chipSelect(priv->chipSelect);
+
+        // Maybe I can go now
+        chipSelect(priv->chipSelect);
+        doSPITransaction8(priv->server->handle, sizeof(ADS114ReadStatus), ADS114ReadStatus, rcv );
+        chipSelect(15);
+
+        // See if the chip is out of Power On Reset
+        if(!(rcv[2] & 0x80))
+        {
+          if((verbosityMask & 1<<4) && ellCount(&ads114Chain))
+            printf("Out of POR  %s\n",priv->pv->name);
+
+          // 1. See if I'm already busy
+          if(!ads114Flag)
+          {
+            if((verbosityMask & 1<<4) && ellCount(&ads114Chain))
+              printf("Initial Processing on %s\n",priv->pv->name);
+
+            counter=0;
+            // 3. Output the initial setup command
+            // Log the message going out if in verbose mode
+            if(priv->tpro != 0)
+            {
+              printf("\nADS114Read_Driver:\n Writing(8) cs=%1x <",priv->chipSelect);
+              for(uint32_t i=0; i<priv->len; i++)
+              {
+                printf("%02x ", priv->xmt.bytes[i]);
+              }
+              printf(">\n");
+            }
+            // Note that the command string should have a START command appended to it.
+            chipSelect(priv->chipSelect);
+            doSPITransaction8(priv->server->handle, priv->len*sizeof(uint8_t), priv->xmt.bytes, priv->rcv.bytes );
+            ads114Flag = 1;
+          }
+          else
+          {
+            if((verbosityMask & 1<<4) && ellCount(&ads114Chain))
+              printf("Waiting for DRDY  %s\n",priv->pv->name);
+            // 6. Wait till the conversion is complete
+            // check the DRDY flag
+            chipSelect(0);
+            doSPITransaction8(priv->server->handle, sizeof(ADS114readDRDY), ADS114readDRDY, rcv);
+            chipSelect(15);
+            // If it's clear, I'm ready to get the data
+            if(!rcv[0])
+            {
+              // 7. Once the conversion is complete, read the data, get the result, and then stop the conversion
+              // 8. Get the data
+              chipSelect(priv->chipSelect);
+              doSPITransaction8(priv->server->handle, sizeof(ADS114readCmd), ADS114readCmd, priv->rcv.bytes );
+
+              // 10. Store the result
+              priv->rval=(priv->rcv.bytes[1] << 8 ) | priv->rcv.bytes[2];
+
+              // 9. Now stop the converter
+              chipSelect(priv->chipSelect);
+              doSPITransaction8(priv->server->handle, sizeof(ADS114stopCmd), ADS114stopCmd, priv->rcv.bytes );
+              // Now that I'm done, release the chip select
+              chipSelect(15);
+
+              // If the value has changed, notify someone.
+              if((priv->rval != priv->lastVal) || !priv->nmfr)
+              {
+
+                // Show I'm done
+                scanIoImmediate(priv->scan, priorityHigh);
+                scanIoImmediate(priv->scan, priorityMedium);
+                scanIoImmediate(priv->scan, priorityLow);
+                priv->pv->tpro = 0;
+
+                // Update the last value that I sent
+                priv->lastVal = priv->rval;
+                priv->nmfr = 1;
+              }
+
+              // Move down the list to the next record on the chain
+              ads114Temp = ellNext(ads114Temp);
+              if(ads114Temp == NULL)
+              {
+                ads114Temp = ellFirst(&ads114Chain);
+              }
+
+              ads114Flag = 0;
+              cs_doNotDisturb = 15;
+            }
+          }
+        }
+        else
+        {
+          // Move down the list to the next record on the chain
+          ads114Temp = ellNext(ads114Temp);
+          if(ads114Temp == NULL)
+          {
+            ads114Temp = ellFirst(&ads114Chain);
+          }
+
+          ads114Flag = 0;
+          cs_doNotDisturb = 15;
+
+        }
+        cs_doNotDisturb = 15;
+      }
+      else
+      {
+          // Reset the sequence, and wait for POR to go off
+          ads114Flag = 0;
+          cs_doNotDisturb = 15;
+      }
+    }
+
+    // OK, done with everything, loop around for next pass.
+   } while(1);
 }
 
 
@@ -1356,6 +1131,7 @@ static void scannerThread(void *parm)
  * in this case, 
  * @param deviceName = Device to use
  * @param chipSelect = which chip select to generate for this access.
+ * @param altChipSelect = Alternate Chip Select for devices that need 2 chip selects.
  * @param index      = where in the record any data will be stored/accessed
  * @param function   = What am I doing.  Right now, I think all I need is "read16" and "write16" to read and write unsigned 16-bit registers
  * @param "hex-data,..." The rest of the items on this list is the actual HEX data to be sent to the device
@@ -1389,6 +1165,7 @@ static int parseLink(const char *linkLine, struct privateData *priv)
   priv->device=NULL;
   priv->server=NULL;
   priv->chipSelect=15;
+  priv->altChipSelect=15;
   priv->indexsupplied=0;
   priv->act=0;
   priv->idx=0;
@@ -1398,7 +1175,6 @@ static int parseLink(const char *linkLine, struct privateData *priv)
   priv->xmt.words=NULL;
   priv->rcv.words=NULL;
 
-//  printf("linkLine = \"%s\"\n",linkLine);
   // Find where the device name ends (it may end with a simple space, or a comma)
   p1=p=strpbrk(linkLine, " ,");
   priv->device = strndup(linkLine, p-linkLine);
@@ -1415,7 +1191,7 @@ static int parseLink(const char *linkLine, struct privateData *priv)
       p++;
 
     // If this is one of my options, handle it.
-    if(*p == '-' && (*(p+1) == 'c' || *(p+1) == 'C' || *(p+1) == 'i' || *(p+1) == 'I') )
+    if(*p == '-' && (*(p+1) == 'c' || *(p+1) == 'C' || (*p+1) == 'd' || *(p+1) == 'D' || *(p+1) == 'i' || *(p+1) == 'I') )
     {
       p++;
       switch(*p++)
@@ -1424,6 +1200,11 @@ static int parseLink(const char *linkLine, struct privateData *priv)
         case 'c':
         case 'C':
           priv->chipSelect = strtol(p, &p, 0);                // Read a integer from the data stream and skip over it.
+          break;
+
+        case 'd':
+        case 'D':
+          priv->altChipSelect = strtol(p, &p, 0);             // Read a integer from the data stream and skip over it.
           break;
 
         // Get the index of where the DATA goes
@@ -1733,7 +1514,7 @@ static long init_MBBIDirect(mbbiDirectRecord *prec)
   struct privateData* priv;
   unsigned long start;
 
-  /* do all the initialization stuff I need for an AI. */
+  /* do all the initialization stuff I need for an MBBIDirect. */
   // Allocate a private data structure for this record and link it to the record
   prec->dpvt=priv=callocMustSucceed(1, sizeof(struct privateData), "init_mbbiDirect Out of memory");
 
@@ -2115,15 +1896,55 @@ static void addSPIDeviceCall(const iocshArgBuf * args)
 	addSPIDevice(args[0].sval, args[1].sval, args[2].ival, args[3].ival, args[4].ival);
 }
 
+// Setting Verbosity Mask
+void setVerbosityMask(int level)
+{
+	errlogPrintf("Setting verbosityMask: %08u, level: %u\n", verbosityMask, level);
+	verbosityMask = level;
+}
+// Setting Verbosity Mask
+static const iocshArg VerbosityMaskArg0 = {"Mask", iocshArgInt };
+static const iocshArg *const VerbosityMaskArgs[1] = { &VerbosityMaskArg0 };
+static const iocshFuncDef setVerbosityMaskDef = {"VerbosityMask", 1, VerbosityMaskArgs };
+static void VerbosityMaskCall(const iocshArgBuf * args)
+{
+	setVerbosityMask(args[0].ival);
+}
+
+void setVerbosityBit(int bit)
+{
+	uint32_t newVerbosity;
+
+	if(bit < 32)
+	{
+		errlogPrintf("verbosityMask:%08x inverting bit: %u", verbosityMask, bit);
+		newVerbosity = verbosityMask ^ ((uint32_t)1 << bit);
+		errlogPrintf("-> %08x\n", newVerbosity);
+		verbosityMask = newVerbosity;
+	}
+	else
+		errlogPrintf("Bit out of range %d > 31\n",bit);
+}
+
+// Setting Verbosity Mask Bit
+static const iocshArg VerbosityBitArg0 = {"Bit", iocshArgInt };
+static const iocshArg *const VerbosityBitArgs[1] = { &VerbosityBitArg0 };
+static const iocshFuncDef setVerbosityBitDef = {"VerbosityBit", 1, VerbosityBitArgs };
+static void VerbosityBitCall(const iocshArgBuf * args)
+{
+	setVerbosityBit(args[0].ival);
+}
 
 
 // This table should go at the end, as it references earlier functions
 //
 // Commands to Register
-void drvSPIRegister() {
-	initRoutine();
-	iocshRegister(&addSPIDeviceDef, addSPIDeviceCall);
-
+void drvSPIRegister()
+{
+  initRoutine();
+  iocshRegister(&setVerbosityMaskDef, VerbosityMaskCall);
+  iocshRegister(&setVerbosityBitDef, VerbosityBitCall);
+  iocshRegister(&addSPIDeviceDef, addSPIDeviceCall);
 }
 
 epicsExportRegistrar(drvSPIRegister);
