@@ -402,6 +402,12 @@ static void initStateRoutine(initHookState state)
     case initHookAfterIocPaused:
 		break;
 
+        /* ==================================================================================================================
+         *
+         * When this state is reached, things are starting to shut down.  I need to stop the scanner task, and then let things
+         * start closing at this point
+         * =================================================================================================================*/
+
     case initHookAtShutdown:             // Start of iocShutdown commands
 		break;
 
